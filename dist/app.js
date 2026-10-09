@@ -3,6 +3,7 @@ const ctx = canvas.getContext("2d", { alpha: true });
 const chalkCursor = document.querySelector("#chalkCursor");
 const notice = document.querySelector("#notice");
 const newChalkButton = document.querySelector("#newChalkButton");
+const roomButtons = [...document.querySelectorAll("[data-room]")];
 
 const CHALK_BUDGET = 8800;
 const CHALK_SIZE = 5;
@@ -12,7 +13,8 @@ const TEXT = {
   ko: {
     description: "색색의 분필로 함께 흔적을 남기는 하루짜리 칠판 Chillpan.",
     board: "함께 그리는 칠판",
-    tray: "분필 받침대",
+    rooms: "칠판 이동",
+    room: (number) => `${number}반`,
     welcome: "오늘의 분필로 흔적을 남겨요",
     gone: "분필을 다 썼어요. 새 분필을 뽑아주세요.",
     finished: "분필을 다 썼어요. 새 분필로 이어 그릴 수 있어요.",
@@ -23,7 +25,8 @@ const TEXT = {
   en: {
     description: "Chillpan is a shared daily chalkboard for leaving traces in colorful chalk.",
     board: "Global chalkboard drawing surface",
-    tray: "Chalk tray",
+    rooms: "Switch classroom",
+    room: (number) => `Room ${number}`,
     welcome: "leave a trace with today's chalk",
     gone: "your chalk is gone. pick a new piece.",
     finished: "the chalk is finished. pick a new piece to keep drawing.",
@@ -37,12 +40,17 @@ const language = navigator.language.toLowerCase().startsWith("ko") ? "ko" : "en"
 let noticeKey = "welcome";
 
 let dayKey = getDayKey();
-let boardKey = `${STORAGE_PREFIX}:board:${dayKey}`;
+let currentRoom = localStorage.getItem(`${STORAGE_PREFIX}:room`) || "1";
+if (!["1", "2", "3"].includes(currentRoom)) currentRoom = "1";
+let boardKey = getBoardKey();
 let stateKey = `${STORAGE_PREFIX}:state:${dayKey}`;
 let width = 0;
 let height = 0;
 let pixelRatio = 1;
 let drawing = false;
+let activePointerId = null;
+let loadingBoard = false;
+let boardLoadId = 0;
 let lastPoint = null;
 let chalkRemaining = CHALK_BUDGET;
 let color = COLORS[Math.floor(Math.random() * COLORS.length)];
@@ -53,11 +61,12 @@ init();
 function init() {
   applyLanguage();
   newChalkButton.addEventListener("click", pickNewChalk);
+  roomButtons.forEach((button) => button.addEventListener("click", () => switchRoom(button.dataset.room)));
   loadState();
   saveState();
   resizeCanvas();
-  drawOpeningDust();
   loadBoard();
+  updateRoomButtons();
   updateChalkCursor();
   window.addEventListener("resize", resizeCanvas);
   window.addEventListener("storage", handleStorageSync);
@@ -76,6 +85,29 @@ function getDayKey(date = new Date()) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function getBoardKey() {
+  const base = `${STORAGE_PREFIX}:board:${dayKey}`;
+  return currentRoom === "1" ? base : `${base}:room-${currentRoom}`;
+}
+
+function switchRoom(room) {
+  if (room === currentRoom) return;
+  stopDrawing();
+  persistBoard(true);
+  currentRoom = room;
+  localStorage.setItem(`${STORAGE_PREFIX}:room`, currentRoom);
+  boardKey = getBoardKey();
+  loadBoard();
+  updateRoomButtons();
+}
+
+function updateRoomButtons() {
+  roomButtons.forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.room === currentRoom));
+  });
+  canvas.setAttribute("aria-label", `${TEXT[language].room(currentRoom)} - ${TEXT[language].board}`);
 }
 
 function loadState() {
@@ -122,36 +154,54 @@ function drawOpeningDust() {
 }
 
 function loadBoard() {
-  const src = localStorage.getItem(boardKey);
-  if (!src) return;
+  restoreBoard(localStorage.getItem(boardKey));
+}
+
+function restoreBoard(src) {
+  const loadId = ++boardLoadId;
+  ctx.clearRect(0, 0, width, height);
+  loadingBoard = Boolean(src);
+  if (!src) {
+    drawOpeningDust();
+    return;
+  }
   const image = new Image();
   image.onload = () => {
+    if (loadId !== boardLoadId) return;
+    ctx.clearRect(0, 0, width, height);
     ctx.drawImage(image, 0, 0, width, height);
+    loadingBoard = false;
+  };
+  image.onerror = () => {
+    if (loadId !== boardLoadId) return;
+    loadingBoard = false;
+    drawOpeningDust();
   };
   image.src = src;
 }
 
-function persistBoard() {
+function persistBoard(force = false) {
+  if (loadingBoard) return;
   const now = Date.now();
-  if (now - lastSavedAt < 600) return;
+  if (!force && now - lastSavedAt < 600) return;
   lastSavedAt = now;
   localStorage.setItem(boardKey, canvas.toDataURL("image/png"));
 }
 
 function handleStorageSync(event) {
-  if (event.key !== boardKey || !event.newValue) return;
-  const image = new Image();
-  image.onload = () => ctx.drawImage(image, 0, 0, width, height);
-  image.src = event.newValue;
+  if (event.key !== boardKey || drawing) return;
+  restoreBoard(event.newValue);
 }
 
 function startDrawing(event) {
   moveChalkCursor(event);
+  if (loadingBoard) return;
   if (chalkRemaining <= 0) {
     showNotice("gone");
     return;
   }
   canvas.setPointerCapture(event.pointerId);
+  activePointerId = event.pointerId;
   drawing = true;
   lastPoint = getPoint(event);
   placeChalkDust(lastPoint.x, lastPoint.y, CHALK_SIZE * 0.7);
@@ -178,12 +228,15 @@ function draw(event) {
   }
 }
 
-function stopDrawing(event) {
+function stopDrawing() {
   if (!drawing) return;
   drawing = false;
   lastPoint = null;
-  if (event?.pointerId !== undefined) canvas.releasePointerCapture(event.pointerId);
-  persistBoard();
+  if (activePointerId !== null && canvas.hasPointerCapture(activePointerId)) {
+    canvas.releasePointerCapture(activePointerId);
+  }
+  activePointerId = null;
+  persistBoard(true);
 }
 
 function getPoint(event) {
@@ -249,13 +302,13 @@ function tick() {
 }
 
 function resetForNewDay(nextDayKey) {
+  stopDrawing();
   dayKey = nextDayKey;
-  boardKey = `${STORAGE_PREFIX}:board:${dayKey}`;
+  boardKey = getBoardKey();
   stateKey = `${STORAGE_PREFIX}:state:${dayKey}`;
   chalkRemaining = CHALK_BUDGET;
   color = COLORS[Math.floor(Math.random() * COLORS.length)];
-  ctx.clearRect(0, 0, width, height);
-  drawOpeningDust();
+  loadBoard();
   saveState();
   updateChalkCursor();
   showNotice("newDay");
@@ -266,7 +319,8 @@ function applyLanguage() {
   document.documentElement.lang = language;
   document.querySelector('meta[name="description"]').content = text.description;
   canvas.setAttribute("aria-label", text.board);
-  document.querySelector(".chalk-tray").setAttribute("aria-label", text.tray);
+  document.querySelector(".room-toggle").setAttribute("aria-label", text.rooms);
+  roomButtons.forEach((button) => { button.textContent = text.room(button.dataset.room); });
   notice.textContent = text[noticeKey];
   document.querySelector("#newChalkLabel").textContent = text.newChalk;
   newChalkButton.setAttribute("aria-label", text.newChalk);

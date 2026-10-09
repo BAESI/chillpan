@@ -6,7 +6,6 @@
 }
 
 * { box-sizing: border-box; }
-
 html, body { height: 100%; }
 
 body {
@@ -74,126 +73,64 @@ body {
   pointer-events: none;
 }
 
-.tray-objects {
-  position: relative;
+.board-controls {
+  position: absolute;
+  z-index: 4;
+  bottom: calc(var(--tray-height) + 24px);
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  gap: 56px;
-  height: 37px;
-  max-width: 600px;
-  margin: 0 auto;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100% - 24px);
 }
 
-.eraser {
-  position: relative;
-  flex: 0 0 100px;
-  height: 45px;
-  margin-bottom: 6px;
-  transform: rotate(-2deg);
-  filter: drop-shadow(2px 5px 3px rgba(0, 0, 0, 0.28));
-  pointer-events: none;
+.room-toggle {
+  display: flex;
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid rgba(242, 240, 230, 0.2);
+  border-radius: 5px;
+  background: rgba(15, 41, 34, 0.86);
 }
 
-.eraser-handle {
-  position: absolute;
-  inset: 0 5px 8px;
-  border: 1px solid #c7d2cb;
-  border-radius: 5px 5px 2px 2px;
-  background:
-    repeating-linear-gradient(90deg, transparent 0 5px, rgba(140, 160, 151, 0.14) 5px 6px),
-    linear-gradient(180deg, #f2f4ec, #e1e7df 68%, #bac9bd);
-  box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.6), inset 0 -3px 0 rgba(116, 138, 121, 0.14);
-  transform: perspective(100px) rotateX(12deg);
-}
-
-.eraser-felt {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 10px;
-  border-radius: 2px;
-  background:
-    repeating-linear-gradient(90deg, rgba(222, 230, 206, 0.12) 0 1px, transparent 1px 3px),
-    linear-gradient(180deg, #66796a, #324c3f);
-  box-shadow: inset 0 2px 0 #a5b6a2;
-}
-
-.new-chalk {
-  position: relative;
-  flex: 0 0 112px;
-  height: 54px;
-  margin-bottom: 4px;
-  padding: 0;
+.board-controls button {
+  height: 38px;
+  padding: 0 14px;
   border: 0;
-  border-radius: 4px;
+  border-radius: 3px;
   background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
 
-.resting-chalk, .spare-chalk {
-  position: absolute;
-  left: 12px;
-  bottom: 8px;
-  width: 78px;
-  height: 11px;
-  border-radius: 3px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.45), transparent 40%, rgba(0, 0, 0, 0.12)),
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.12) 0 1px, transparent 1px 8px),
-    var(--chalk);
-  box-shadow: 1px 4px 3px rgba(0, 0, 0, 0.3);
-  transform: rotate(-6deg);
-  transition: transform 160ms ease;
-}
+.room-toggle button { min-width: 52px; }
 
-.spare-chalk {
-  left: 47px;
-  bottom: 21px;
-  width: 43px;
-  height: 9px;
-  background: linear-gradient(180deg, #f2eee2, #cfcdbf);
-  transform: rotate(5deg);
-}
-
-.new-chalk:hover .resting-chalk,
-.new-chalk:focus-visible .resting-chalk {
-  transform: translateY(-4px) rotate(-9deg);
-}
-
-.new-chalk:focus-visible { outline: 1px solid var(--ink); outline-offset: 4px; }
-
-.tool-tooltip {
-  position: absolute;
-  bottom: 64px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 7px 10px;
-  border-radius: 4px;
-  background: #102b25;
+.room-toggle button[aria-pressed="true"] {
   color: var(--ink);
-  font: 12px/1.4 ui-monospace, monospace;
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 160ms ease;
+  background: rgba(242, 240, 230, 0.16);
 }
 
-.new-chalk:hover .tool-tooltip,
-.new-chalk:focus-visible .tool-tooltip { opacity: 1; }
+.board-controls button:hover { color: var(--ink); background: rgba(242, 240, 230, 0.1); }
+.board-controls button:focus-visible { outline: 1px solid var(--ink); outline-offset: 3px; }
 
-.tray-dust {
-  position: absolute;
-  bottom: 2px;
-  left: 50%;
-  width: 260px;
-  height: 2px;
-  transform: translateX(-50%);
-  background: repeating-linear-gradient(90deg, transparent 0 7px, rgba(235, 237, 217, 0.22) 7px 10px, transparent 10px 17px);
-  pointer-events: none;
+.board-controls .new-chalk {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 46px;
+  border: 1px solid rgba(242, 240, 230, 0.2);
+  border-radius: 5px;
+  background: rgba(15, 41, 34, 0.86);
+  color: var(--ink);
 }
+
+.chalk-swatch { width: 8px; height: 8px; border-radius: 50%; background: var(--chalk); }
 
 .chalk-cursor {
   position: fixed;
@@ -230,7 +167,7 @@ body {
   position: absolute;
   z-index: 5;
   left: 50%;
-  bottom: calc(var(--tray-height) + 68px);
+  bottom: calc(var(--tray-height) + 88px);
   width: max-content;
   max-width: calc(100% - 40px);
   transform: translateX(-50%);
@@ -248,5 +185,8 @@ body {
 
 @media (max-width: 760px) {
   :root { --tray-height: calc(62px + env(safe-area-inset-bottom, 0px)); }
-  .tray-objects { gap: 30px; }
+  .board-controls { gap: 8px; }
+  .board-controls button { padding: 0 8px; font-size: 11px; }
+  .room-toggle button { min-width: 42px; }
+  .board-controls .new-chalk { gap: 8px; }
 }
