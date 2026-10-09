@@ -83,7 +83,7 @@ test("hidden fanfare respects mute, replaces previous notes and cleans up", () =
 test("eraser restores a bounded budget and uses its own cursor and wire tool", () => {
   const { run, cursor } = board({ chalkKind: "eraser", chalkRemaining: 99999 });
   run("loadState(); updateChalkCursor(); width = 390; height = 700; beginStroke({x:20,y:30})");
-  assert.equal(run("chalkRemaining"), 2400);
+  assert.equal(run("chalkRemaining"), 9600);
   assert.equal(cursor.style.width, "48px");
   assert.equal(cursor.style.height, "30px");
   assert.equal(run("currentStroke.tool"), "eraser");
