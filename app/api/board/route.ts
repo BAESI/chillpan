@@ -16,12 +16,14 @@ async function forwardToAws(request: Request, body?: string) {
     outgoing.set("x-amz-content-sha256", Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join(""));
   }
   try {
-    const response = await fetch(target, {
-      method: request.method, headers: outgoing, body, redirect: "error", signal: AbortSignal.timeout(15000),
+    const response = await fetch(target.toString(), {
+      method: request.method, headers: outgoing, body, redirect: "manual", signal: AbortSignal.timeout(15000), cache: "no-store",
     });
+    if (response.status >= 300 && response.status < 400) throw new Error("Unexpected upstream redirect");
     // Never forward Sites identity, cookies, or service credentials to the public origin.
     return new Response(response.body, { status: response.status, headers: { ...headers, "Content-Type": "application/json" } });
-  } catch {
+  } catch (error) {
+    console.error("AWS board forwarding failed", error instanceof Error ? error.message : "Unknown error");
     return Response.json({ error: "Board temporarily unavailable" }, { status: 503, headers });
   }
 }
