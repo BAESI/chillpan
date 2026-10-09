@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Chillpan is a quiet global chalkboard where each visitor gets one piece of chalk per day."
+    />
+    <title>Chillpan</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='5' fill='%23111a17'/%3E%3Cpath d='M12 25 20 6' stroke='%23eeeadd' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <canvas id="chalkboard" aria-label="Global chalkboard drawing surface"></canvas>
+
+      <section class="topbar" aria-label="Chillpan status">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <div>
+            <h1>chillpan</h1>
+            <p>one chalk. one day. everyone leaves a trace.</p>
+          </div>
+        </div>
+
+        <div class="meters">
+          <div class="meter" aria-label="Remaining chalk">
+            <span>chalk</span>
+            <strong id="chalkPercent">100%</strong>
+          </div>
+          <div class="meter" aria-label="Reset countdown">
+            <span>reset</span>
+            <strong id="resetClock">--:--:--</strong>
+          </div>
+        </div>
+      </section>
+
+      <aside class="dock" aria-label="Drawing controls">
+        <button class="tool is-active" type="button" data-size="5" title="Thin chalk">
+          <span></span>
+        </button>
+        <button class="tool" type="button" data-size="10" title="Soft chalk">
+          <span></span>
+        </button>
+        <button class="tool" type="button" data-size="18" title="Heavy chalk">
+          <span></span>
+        </button>
+        <button class="icon-button" id="saveButton" type="button" title="Save image">↓</button>
+      </aside>
+
+      <div class="chalk-stick" aria-hidden="true">
+        <span id="chalkStickFill"></span>
+      </div>
+
+      <div class="chalk-cursor" id="chalkCursor" aria-hidden="true">
+        <span></span>
+      </div>
+
+      <div class="notice" id="notice" role="status" aria-live="polite">
+        drag to spend today's chalk
+      </div>
+    </main>
+
+    <script src="./app.js" type="module"></script>
+  </body>
+</html>

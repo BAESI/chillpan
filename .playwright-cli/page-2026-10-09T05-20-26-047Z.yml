@@ -1,0 +1,20 @@
+- main [ref=f1e2]:
+  - generic "Global chalkboard drawing surface" [ref=f1e3]
+  - region "Chillpan status":
+    - generic:
+      - generic:
+        - heading "chillpan" [level=1]
+        - paragraph: one chalk. one day. everyone leaves a trace.
+    - generic [ref=f1e4]:
+      - generic "Remaining chalk" [ref=f1e5]:
+        - generic [ref=f1e6]: chalk
+        - strong [ref=f1e7]: 100%
+      - generic "Reset countdown" [ref=f1e8]:
+        - generic [ref=f1e9]: reset
+        - strong [ref=f1e10]: "--:--:--"
+  - complementary "Drawing controls" [ref=f1e11]:
+    - button "Thin chalk" [ref=f1e12] [cursor=pointer]
+    - button "Soft chalk" [ref=f1e14] [cursor=pointer]
+    - button "Heavy chalk" [ref=f1e16] [cursor=pointer]
+    - button "↓" [ref=f1e18] [cursor=pointer]
+  - status: drag to spend today's chalk
