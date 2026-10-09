@@ -1,4 +1,5 @@
 import ChalkboardBoot from "./chalkboard-boot";
+import { Mail } from "lucide-react";
 
 export default function Home() {
   return <>
@@ -20,6 +21,11 @@ export default function Home() {
           <input id="soundToggle" type="checkbox" defaultChecked />
           <span id="soundLabel">소리</span>
         </label>
+        <a className="feedback-button" id="feedbackButton"
+          href={`mailto:baesi4879@gmail.com?subject=${encodeURIComponent("Chillpan 피드백")}`}
+          aria-label="피드백 보내기" title="피드백 보내기">
+          <Mail size={18} aria-hidden="true" />
+        </a>
       </div>
       <div className="chalk-tray" aria-hidden="true" />
       <div className="chalk-cursor" id="chalkCursor" aria-hidden="true"><span /></div>

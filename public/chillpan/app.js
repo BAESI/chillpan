@@ -25,6 +25,7 @@ const TEXT = {
     rooms: "칠판 이동",
     room: (number) => `${number}반`,
     sound: "소리",
+    feedback: "피드백 보내기",
     welcome: "오늘의 분필로 흔적을 남겨요",
     gone: "분필을 다 썼어요. 새 분필을 뽑아주세요.",
     finished: "분필을 다 썼어요. 새 분필로 이어 그릴 수 있어요.",
@@ -44,6 +45,7 @@ const TEXT = {
     rooms: "Switch classroom",
     room: (number) => `Room ${number}`,
     sound: "Sound",
+    feedback: "Send feedback",
     welcome: "leave a trace with today's chalk",
     gone: "your chalk is gone. pick a new piece.",
     finished: "the chalk is finished. pick a new piece to keep drawing.",
@@ -817,6 +819,9 @@ function applyLanguage() {
   roomSelect.setAttribute("aria-label", text.rooms);
   [...roomSelect.options].forEach((option) => { option.textContent = text.room(option.value); });
   document.querySelector("#soundLabel").textContent = text.sound;
+  const feedbackButton = document.querySelector("#feedbackButton");
+  feedbackButton.setAttribute("aria-label", text.feedback);
+  feedbackButton.title = text.feedback;
   notice.textContent = text[noticeKey];
   document.querySelector("#newChalkLabel").textContent = text.newChalk;
   newChalkButton.setAttribute("aria-label", text.newChalk);
