@@ -77,6 +77,8 @@ Erasers have a separate 9,600-unit device-local budget, a shrinking rectangular 
 
 Erase actions use the optional `tool: "eraser"` stroke field and are persisted with ink in the same canonical sequence. Clients replay confirmed actions before pending local actions to reconcile concurrent drawing/erasing. AWS remains the shared source of truth; the old D1 fallback refuses erasing rather than silently saving it as ink. Already-open old clients must refresh to understand erase actions. Deploy the compatible backend before the frontend.
 
+Canonical reconciliation renders into a temporary canvas in animation-frame slices (4 ms target, at most 64 actions per slice; erasers yield per segment), pauses during input, and commits only a complete current snapshot. Room changes cancel stale work. Locally acknowledged strokes remain optimistic until they appear in GET results, so a delayed poll cannot drop them. Pointer movement uses cached board bounds; cursor height is rounded to CSS pixels without layout animation. Already-synchronized remote actions still append directly.
+
 ## AdSense Setup
 
 The public AWS build includes the supplied AdSense publisher ID from `aws/adsense.json`, the asynchronous AdSense script in `<head>`, a verification meta tag, and root-level `ads.txt`. The publisher ID is public, not a credential. No manual ad placements are added. The owner-private Sites preview does not load AdSense.

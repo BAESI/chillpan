@@ -100,11 +100,12 @@ test("remote eraser replays every segment instead of drawing colored ink", () =>
 test("canonical replay orders shared strokes before pending edits and avoids duplicate erasing", () => {
   const { run } = board();
   run(`var replay = []; ctx.clearRect = () => {}; drawOpeningDust = () => {};
-    drawSharedStroke = stroke => replay.push(stroke.strokeId);
-    sharedStrokes = [{strokeId:"ink"},{strokeId:"erase",tool:"eraser"}];
+    drawStrokeOn = stroke => replay.push(stroke.strokeId);
+    eraseChalk = () => replay.push("erase");
+    sharedStrokes = [{strokeId:"ink"},{strokeId:"erase",tool:"eraser",points:[[.1,.1]]}];
     sharedStrokeIds.add("ink"); sharedStrokeIds.add("erase");
     pendingStrokes = [{strokeId:"erase",tool:"eraser",day:dayKey,room:1},{strokeId:"next",day:dayKey,room:1}];
-    currentRoom = "1"; renderBoardView();`);
+    currentRoom = "1"; for (const step of boardReplaySteps([...sharedStrokes, pendingStrokes[1]], ctx, canvas)) {}`);
   assert.deepEqual(Array.from(run("replay")), ["ink", "erase", "next"]);
 });
 
@@ -152,4 +153,43 @@ test("movement storage is coalesced and final state flush cancels the timer", ()
   run("saveState()");
   assert.equal(writes, 1);
   assert.equal(run("stateSaveTimer"), 0);
+});
+
+test("history replay yields, pauses for input, cancels stale rooms and retains acknowledged local ink", () => {
+  const { run, sandbox } = board();
+  let frames = [], clock = 0;
+  sandbox.requestAnimationFrame = (callback) => { frames.push(callback); return frames.length; };
+  sandbox.cancelAnimationFrame = () => {};
+  sandbox.performance.now = () => ++clock;
+  sandbox.document.createElement = () => ({ getContext: () => ({ setTransform() {} }) });
+  run(`var painted = [], commits = 0;
+    ctx.clearRect = () => {}; ctx.drawImage = () => commits++;
+    drawOpeningDust = () => {};
+    drawStrokeOn = stroke => painted.push(stroke.strokeId);
+    sharedStrokes = Array.from({length:200}, (_,i) => ({strokeId:String(i)}));
+    optimisticStrokes.set("ack-local", {strokeId:"ack-local",day:dayKey,room:1});
+    pendingStrokes = []; renderBoardView();`);
+  assert.equal(run("painted.length"), 0);
+  frames.shift()();
+  assert.ok(run("painted.length") > 0 && run("painted.length") < 200);
+  assert.equal(run("commits"), 0);
+  const paintedBeforeInput = run("painted.length");
+  run("drawing = true");
+  frames.shift()();
+  assert.equal(run("painted.length"), paintedBeforeInput);
+  run("drawing = false; boardLoadId++");
+  frames.shift()();
+  assert.equal(run("commits"), 0);
+  run("painted = []; renderBoardView()");
+  for (let i = 0; frames.length && i < 300; i++) frames.shift()();
+  assert.equal(run("commits"), 1);
+  assert.equal(run("painted.at(-1)"), "ack-local");
+  assert.equal(run("boardNeedsReplay"), false);
+});
+
+test("pointer coordinates do not force a layout read for each movement", () => {
+  const { run } = board();
+  run(`canvas.getBoundingClientRect = () => { throw new Error("forced layout") };
+    boardBounds = {left:10,top:20};`);
+  assert.deepEqual(JSON.parse(JSON.stringify(run("getPoint({clientX:30,clientY:50})"))), {x:20,y:30});
 });

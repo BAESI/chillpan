@@ -7,6 +7,10 @@ export default function Home() {
       <canvas id="chalkDust" aria-hidden="true" />
       <p className="board-motto">하루 지나면 다 지운다</p>
       <div className="board-controls">
+        <button className="new-chalk" id="newChalkButton" type="button">
+          <span className="chalk-swatch" aria-hidden="true" />
+          <span id="newChalkLabel">새 분필</span>
+        </button>
         <select id="roomSelect" aria-label="칠판 이동" defaultValue="1">
           <option value="1">1반</option>
           <option value="2">2반</option>
@@ -17,10 +21,6 @@ export default function Home() {
           <span id="soundLabel">소리</span>
         </label>
       </div>
-      <button className="new-chalk" id="newChalkButton" type="button">
-        <span className="chalk-swatch" aria-hidden="true" />
-        <span id="newChalkLabel">새 분필</span>
-      </button>
       <div className="chalk-tray" aria-hidden="true" />
       <div className="chalk-cursor" id="chalkCursor" aria-hidden="true"><span /></div>
       <div className="notice is-hidden" id="notice" role="status" aria-live="polite" />

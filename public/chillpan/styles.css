@@ -137,11 +137,6 @@ body {
 .new-chalk:hover { background: #244d41; }
 
 .new-chalk {
-  position: absolute;
-  z-index: 4;
-  bottom: calc(var(--tray-height) + 76px);
-  left: 50%;
-  transform: translateX(-50%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -166,7 +161,8 @@ body {
   opacity: 0;
   transform: translate3d(-100px, -100px, 0) rotate(-45deg);
   transform-origin: top center;
-  transition: opacity 160ms ease, height 120ms ease;
+  transition: opacity 160ms ease;
+  will-change: transform;
 }
 
 .chalk-cursor.is-visible { opacity: 1; }
@@ -188,7 +184,7 @@ body {
   position: absolute;
   z-index: 5;
   left: 50%;
-  bottom: calc(var(--tray-height) + 132px);
+  bottom: calc(var(--tray-height) + 88px);
   width: max-content;
   max-width: calc(100% - 40px);
   transform: translateX(-50%);
@@ -229,7 +225,7 @@ body {
   column-gap: 0.4em;
   row-gap: 3px;
   max-width: min(520px, calc(100% - 40px));
-  bottom: calc(var(--tray-height) + 140px);
+  bottom: calc(var(--tray-height) + 88px);
   padding: 18px 22px;
   border-radius: 6px;
   background: rgba(9, 29, 23, 0.94);
@@ -262,8 +258,7 @@ body {
 @media (max-width: 760px) {
   :root { --tray-height: calc(62px + env(safe-area-inset-bottom, 0px)); }
   .board-controls { gap: 8px; }
-  .new-chalk { bottom: calc(var(--tray-height) + 76px); gap: 8px; padding: 0 10px; font-size: 11px; }
-  .notice { bottom: calc(var(--tray-height) + 132px); }
-  .notice.is-hidden-find { bottom: calc(var(--tray-height) + 140px); font-size: 19px; padding: 14px 16px; }
+  .new-chalk { gap: 8px; padding: 0 10px; font-size: 11px; }
+  .notice.is-hidden-find { font-size: 19px; padding: 14px 16px; }
   .board-motto { left: calc(18px + env(safe-area-inset-left, 0px)); top: calc(18px + env(safe-area-inset-top, 0px)); max-width: calc(100% - 36px); font-size: 26px; }
 }
