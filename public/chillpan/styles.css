@@ -110,7 +110,8 @@ body {
   position: absolute;
   z-index: 4;
   bottom: calc(var(--tray-height) + 24px);
-  left: 24px;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 12px;
@@ -138,7 +139,7 @@ body {
 .new-chalk {
   position: absolute;
   z-index: 4;
-  bottom: calc(var(--tray-height) + 24px);
+  bottom: calc(var(--tray-height) + 76px);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -187,7 +188,7 @@ body {
   position: absolute;
   z-index: 5;
   left: 50%;
-  bottom: calc(var(--tray-height) + 88px);
+  bottom: calc(var(--tray-height) + 132px);
   width: max-content;
   max-width: calc(100% - 40px);
   transform: translateX(-50%);
@@ -228,7 +229,7 @@ body {
   column-gap: 0.4em;
   row-gap: 3px;
   max-width: min(520px, calc(100% - 40px));
-  bottom: calc(var(--tray-height) + 112px);
+  bottom: calc(var(--tray-height) + 140px);
   padding: 18px 22px;
   border-radius: 6px;
   background: rgba(9, 29, 23, 0.94);
@@ -260,7 +261,7 @@ body {
 
 @media (max-width: 760px) {
   :root { --tray-height: calc(62px + env(safe-area-inset-bottom, 0px)); }
-  .board-controls { left: 16px; gap: 8px; }
+  .board-controls { gap: 8px; }
   .new-chalk { bottom: calc(var(--tray-height) + 76px); gap: 8px; padding: 0 10px; font-size: 11px; }
   .notice { bottom: calc(var(--tray-height) + 132px); }
   .notice.is-hidden-find { bottom: calc(var(--tray-height) + 140px); font-size: 19px; padding: 14px 16px; }

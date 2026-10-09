@@ -78,6 +78,8 @@ let chalkRemaining = CHALK_BUDGET;
 let color = COLORS[Math.floor(Math.random() * COLORS.length)];
 let chalkKind = "normal";
 let sharedStrokes = [];
+let boardNeedsReplay = false;
+let stateSaveTimer = 0;
 const sharedStrokeIds = new Set();
 let boardCursor = 0;
 let pollTimer = 0;
@@ -178,7 +180,13 @@ function loadState() {
 function toolBudget() { return chalkKind === "eraser" ? ERASER_BUDGET : CHALK_BUDGET; }
 
 function saveState() {
+  clearTimeout(stateSaveTimer);
+  stateSaveTimer = 0;
   localStorage.setItem(stateKey, JSON.stringify({ chalkRemaining, color, chalkKind }));
+}
+
+function scheduleStateSave() {
+  if (!stateSaveTimer) stateSaveTimer = setTimeout(saveState, 250);
 }
 
 function resizeCanvas() {
@@ -221,6 +229,7 @@ function loadBoard() {
   clearTimeout(pollTimer);
   boardCursor = 0;
   sharedStrokes = [];
+  boardNeedsReplay = false;
   sharedStrokeIds.clear();
   seenStrokes.clear();
   pendingStrokes.forEach((stroke) => seenStrokes.add(stroke.strokeId));
@@ -243,14 +252,22 @@ async function pollBoard(generation) {
       resetForNewDay(data.day);
       return;
     }
+    // Append only when the visible canvas is already in server order.
+    const canAppend = !loadingBoard && !boardNeedsReplay && !drawing && !currentStroke &&
+      !pendingStrokes.length && seenStrokes.size === sharedStrokeIds.size;
     data.strokes.forEach((stroke) => {
       if (!sharedStrokeIds.has(stroke.strokeId)) {
         sharedStrokes.push(stroke);
         sharedStrokeIds.add(stroke.strokeId);
+        if (canAppend) drawSharedStroke(stroke);
+        else boardNeedsReplay = true;
       }
       seenStrokes.add(stroke.strokeId);
     });
-    if (!data.hasMore && (loadingBoard || data.strokes.length)) renderBoardView();
+    if (!data.hasMore && (loadingBoard || boardNeedsReplay)) {
+      if (drawing) boardNeedsReplay = true;
+      else renderBoardView();
+    }
     boardCursor = data.cursor;
     if (!data.hasMore) {
       loadingBoard = false;
@@ -293,6 +310,7 @@ function drawSharedStroke(stroke) {
 }
 
 function renderBoardView() {
+  boardNeedsReplay = false;
   ctx.clearRect(0, 0, width, height);
   drawOpeningDust();
   sharedStrokes.forEach(drawSharedStroke);
@@ -311,7 +329,15 @@ function eraseChalk(from, to) {
   ctx.globalCompositeOperation = "copy";
   ctx.globalAlpha = 1;
   ctx.filter = "blur(1px)";
-  ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, width, height);
+  // Include a blur halo, but never filter the full high-DPI canvas for a small eraser.
+  const left = Math.max(0, Math.floor((Math.min(from.x, to.x) - padding - 4) * pixelRatio));
+  const top = Math.max(0, Math.floor((Math.min(from.y, to.y) - padding - 4) * pixelRatio));
+  const right = Math.min(canvas.width, Math.ceil((Math.max(from.x, to.x) + padding + 4) * pixelRatio));
+  const bottom = Math.min(canvas.height, Math.ceil((Math.max(from.y, to.y) + padding + 4) * pixelRatio));
+  if (right > left && bottom > top) {
+    ctx.drawImage(canvas, left, top, right - left, bottom - top,
+      left / pixelRatio, top / pixelRatio, (right - left) / pixelRatio, (bottom - top) / pixelRatio);
+  }
   ctx.globalCompositeOperation = "destination-out";
   ctx.filter = "blur(1px)";
   ctx.globalAlpha = 0.38;
@@ -443,7 +469,7 @@ function draw(event) {
   currentStroke.points.push(normalizedPoint(point));
   if (currentStroke.points.length >= 64 || now - strokeStartedAt >= STROKE_INTERVAL) queueStroke(true);
   updateChalkCursor();
-  saveState();
+  scheduleStateSave();
 
   if (chalkRemaining <= 0) {
     stopDrawing(event);
@@ -453,6 +479,7 @@ function draw(event) {
 
 function stopDrawing() {
   stopChalkSound();
+  saveState();
   if (!drawing) return;
   if (chalkKind === "eraser" && currentStroke?.points.length === 1 && !strokeContinuation) {
     eraseChalk(lastPoint, lastPoint);
@@ -468,6 +495,7 @@ function stopDrawing() {
     canvas.releasePointerCapture(activePointerId);
   }
   activePointerId = null;
+  if (boardNeedsReplay && !loadingBoard) renderBoardView();
 }
 
 function emitFallingDust(from, to, count) {

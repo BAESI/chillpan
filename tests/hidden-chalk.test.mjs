@@ -107,3 +107,49 @@ test("canonical replay orders shared strokes before pending edits and avoids dup
     currentRoom = "1"; renderBoardView();`);
   assert.deepEqual(Array.from(run("replay")), ["ink", "erase", "next"]);
 });
+
+test("polling appends only new actions and defers canonical replay during drawing", async () => {
+  const { run, sandbox } = board();
+  sandbox.setTimeout = () => 1;
+  run(`var replayCount = 0, painted = []; canvas.setAttribute = () => {};
+    renderBoardView = () => { replayCount++; boardNeedsReplay = false; };
+    drawSharedStroke = stroke => painted.push(stroke.strokeId);
+    sharedStrokeIds.add("old"); seenStrokes.add("old");
+    var reply = {day:dayKey,strokes:[{strokeId:"new"}],cursor:2,hasMore:false};`);
+  sandbox.fetch = async () => ({ ok: true, json: async () => run("reply") });
+  await run("pollBoard(boardLoadId)");
+  assert.deepEqual(Array.from(run("painted")), ["new"]);
+  assert.equal(run("replayCount"), 0);
+  run('drawing = true; reply.strokes = [{strokeId:"remote-eraser",tool:"eraser"}];');
+  await run("pollBoard(boardLoadId)");
+  assert.equal(run("replayCount"), 0);
+  assert.equal(run("boardNeedsReplay"), true);
+  run("drawing = false; reply.strokes = [];");
+  await run("pollBoard(boardLoadId)");
+  assert.equal(run("replayCount"), 1);
+});
+
+test("eraser filters a bounded high-DPI region instead of the full canvas", () => {
+  const { run } = board();
+  run(`var imageArgs;
+    width = 1920; height = 1080; pixelRatio = 2; canvas.width = 3840; canvas.height = 2160;
+    for (const method of ["save","restore","beginPath","rect","clip","moveTo","lineTo","stroke"]) ctx[method] = () => {};
+    ctx.drawImage = (...args) => { imageArgs = args; };
+    eraseChalk({x:500,y:500},{x:510,y:510});`);
+  assert.ok(run("imageArgs[3] * imageArgs[4] < canvas.width * canvas.height / 100"));
+  assert.equal(run("imageArgs[3] / pixelRatio"), run("imageArgs[7]"));
+});
+
+test("movement storage is coalesced and final state flush cancels the timer", () => {
+  const { run, sandbox } = board();
+  let timers = 0, writes = 0;
+  sandbox.setTimeout = () => ++timers;
+  sandbox.clearTimeout = () => {};
+  sandbox.localStorage.setItem = () => writes++;
+  run("for(let i=0;i<100;i++) scheduleStateSave()");
+  assert.equal(timers, 1);
+  assert.equal(writes, 0);
+  run("saveState()");
+  assert.equal(writes, 1);
+  assert.equal(run("stateSaveTimer"), 0);
+});
