@@ -11,7 +11,6 @@ const COLORS = ["#eeeadd", "#dbe8d2", "#f0d1d4", "#ccdced", "#eadfb8"];
 const LANGUAGE_KEY = `${STORAGE_PREFIX}:language`;
 const TEXT = {
   ko: {
-    tagline: "분필 하나. 하루 하나. 함께 남기는 흔적.",
     description: "하루에 분필 하나, 모두가 함께 흔적을 남기는 칠판 Chillpan.",
     board: "함께 그리는 칠판",
     status: "Chillpan 상태",
@@ -22,7 +21,6 @@ const TEXT = {
     newDay: "자정이 되어 새로운 칠판이 열렸어요.",
   },
   en: {
-    tagline: "one chalk. one day. everyone leaves a trace.",
     description: "Chillpan is a quiet global chalkboard where each visitor gets one piece of chalk per day.",
     board: "Global chalkboard drawing surface",
     status: "Chillpan status",
@@ -263,7 +261,6 @@ function resetForNewDay(nextDayKey) {
 function applyLanguage() {
   const text = TEXT[language];
   document.documentElement.lang = language;
-  document.querySelector("#tagline").textContent = text.tagline;
   document.querySelector('meta[name="description"]').content = text.description;
   canvas.setAttribute("aria-label", text.board);
   document.querySelector(".topbar").setAttribute("aria-label", text.status);
