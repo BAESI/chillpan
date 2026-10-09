@@ -10,8 +10,8 @@ const dustCtx = dustCanvas.getContext("2d");
 
 const CHALK_BUDGET = 8800;
 const CHALK_SIZE = 5;
-const SYNC_INTERVAL = Math.max(750, Number(document.body?.dataset?.syncMs) || 750);
-const STROKE_INTERVAL = Math.max(120, Number(document.body?.dataset?.strokeMs) || 120);
+const SYNC_INTERVAL = Math.max(750, Number(document.body?.dataset?.syncMs) || 3000);
+const STROKE_INTERVAL = Math.max(120, Number(document.body?.dataset?.strokeMs) || 600);
 const STORAGE_PREFIX = "chillpan";
 const COLORS = ["#f28eaa", "#82d9ad", "#85bdf3", "#f1d46f", "#c6a0ee", "#f5ad7c"];
 const TEXT = {

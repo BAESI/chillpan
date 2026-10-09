@@ -1,6 +1,8 @@
 # AWS Hosting
 
-The AWS version reuses `app/page.tsx` and `public/chillpan/`. Cloudflare Sites remains independently deployable. AWS and Sites have separate board databases; they do not automatically synchronize.
+The AWS version reuses `app/page.tsx` and `public/chillpan/`. Cloudflare Sites remains independently deployable. By default, AWS and Sites have separate databases. After copying the current drawings, set the Sites runtime variable `AWS_BOARD_ORIGIN` to the AWS HTTPS origin and deploy Sites: both URLs then share the AWS database. The old D1 data remains untouched for rollback. Do not enable forwarding until migration is complete. Old open tabs must refresh because database cursors can change.
+
+`node aws/migrate.mjs` accepts `{sourceOrigin, sourceToken, targetOrigin}` through hidden stdin and copies today's three boards idempotently. Obtain a fresh service token from the Sites connector and keep it out of shell arguments, files, Git, and logs. Perform the cutover when nobody is drawing; writes accepted by D1 after the snapshot are not automatically mirrored. Never run the migration after Sites forwarding is enabled, as both endpoints would then address the same database.
 
 ## Deploy
 

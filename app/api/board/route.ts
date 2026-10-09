@@ -4,6 +4,28 @@ import { boardDay, validStroke, type Stroke } from "@/lib/board";
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "no-store" };
 
+async function forwardToAws(request: Request, body?: string) {
+  if (!env.AWS_BOARD_ORIGIN) return null;
+  const target = new URL("/api/board", env.AWS_BOARD_ORIGIN);
+  if (target.protocol !== "https:") throw new Error("AWS board origin must use HTTPS");
+  target.search = new URL(request.url).search;
+  const outgoing = new Headers();
+  if (body !== undefined) {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body));
+    outgoing.set("content-type", "application/json");
+    outgoing.set("x-amz-content-sha256", Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join(""));
+  }
+  try {
+    const response = await fetch(target, {
+      method: request.method, headers: outgoing, body, redirect: "error", signal: AbortSignal.timeout(15000),
+    });
+    // Never forward Sites identity, cookies, or service credentials to the public origin.
+    return new Response(response.body, { status: response.status, headers: { ...headers, "Content-Type": "application/json" } });
+  } catch {
+    return Response.json({ error: "Board temporarily unavailable" }, { status: 503, headers });
+  }
+}
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const room = Number(url.searchParams.get("room"));
@@ -11,6 +33,8 @@ export async function GET(request: Request) {
   if (![1, 2, 3].includes(room) || !Number.isSafeInteger(after) || after < 0) {
     return Response.json({ error: "Invalid board" }, { status: 400, headers });
   }
+  const forwarded = await forwardToAws(request);
+  if (forwarded) return forwarded;
   const day = boardDay();
   const result = await env.DB!.prepare(
     "SELECT id, stroke_id AS strokeId, day, room, color, size, points FROM strokes WHERE day = ? AND room = ? AND id > ? ORDER BY id LIMIT 500",
@@ -36,6 +60,8 @@ export async function POST(request: Request) {
   if (body.strokes.some((stroke: Stroke) => stroke.day !== day)) {
     return Response.json({ error: "Board has reset", day }, { status: 409, headers });
   }
+  const forwarded = await forwardToAws(request, text);
+  if (forwarded) return forwarded;
   await env.DB!.batch([
     env.DB!.prepare("DELETE FROM strokes WHERE id IN (SELECT id FROM strokes WHERE day < ? LIMIT 1000)").bind(day),
     ...body.strokes.map((stroke: Stroke) => env.DB!.prepare(

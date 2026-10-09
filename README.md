@@ -1,5 +1,7 @@
 # Chillpan
 
+AWS hosting, personal-account deployment, custom domains, cost limits, and AdSense verification are documented in [aws/README.md](aws/README.md). Run `npm run build:aws` to build the AWS version and `npm run test:unit` for browser-rendering and AWS-store regression tests.
+
 A shared daily chalkboard with three classrooms. Strokes are appended to Cloudflare D1 and synchronized between visitors by polling. Every room resets at midnight in Asia/Seoul. Chalk color and remaining length are device preferences; drawings are server data.
 
 The canvas UI is in `public/chillpan/`. `app/api/board/route.ts` serves shared strokes. Falling dust uses a separate transient canvas; Web Audio synthesizes chalk friction after a user gesture.

@@ -70,7 +70,7 @@
       "Properties": { "OriginRequestPolicyConfig": {
         "Name": { "Fn::Sub": "${AWS::StackName}-api" },
         "CookiesConfig": { "CookieBehavior": "none" },
-        "HeadersConfig": { "HeaderBehavior": "whitelist", "Headers": ["Origin", "Content-Type", "x-amz-content-sha256", "x-chillpan-host"] },
+        "HeadersConfig": { "HeaderBehavior": "allExcept", "Headers": ["Host", "Cookie"] },
         "QueryStringsConfig": { "QueryStringBehavior": "whitelist", "QueryStrings": ["room", "after"] }
       } }
     },
