@@ -17,6 +17,26 @@ node aws/deploy.mjs --profile chillpan-personal --account YOUR_12_DIGIT_ACCOUNT_
 
 The account is checked before any resource change. CloudFormation owns the infrastructure. `SiteUrl` is the initial public HTTPS URL; domain registration is separate. S3 and Lambda origins are private and accessible only through CloudFront. Existing AWS resources are not modified.
 
+## Updates And Rollback
+
+GitHub `BAESI/chillpan` is the source of truth. Pushing `main` does not deploy automatically. Keep AWS as the public production host and Sites as a private compatibility URL forwarding to the same board API.
+
+For each release:
+
+1. Make a focused change and inspect `git diff`.
+2. Run `npm run test:unit`, `npx tsc --noEmit`, and `npm run build:aws`. Preview desktop/mobile before publishing UI changes.
+3. Commit and push the verified revision to GitHub.
+4. Deploy with the explicit personal profile/account command above. The deploy script checks the account, updates CloudFormation, uploads assets, then invalidates CloudFront.
+5. Verify the public page, room switching, and shared API. Record the Git commit and deployment outcome. Publish matching Sites source when keeping that compatibility URL current.
+
+Frontend releases do not clear DynamoDB drawings. The fixed board motto is an HTML overlay, not a stored stroke: daily reset, room switching, resize, and chalk replacement cannot erase it. Its self-hosted Nanum Pen Script font is subset to the motto; the accompanying OFL license is included in `public/chillpan/`.
+
+For rollback, inspect the previous working commit in a separate worktree and deploy it with the same explicit account guard. Do not reset a working checkout or delete the table/bucket. Database schema changes need a separate backwards-compatible migration plan; reverting application code cannot undo a destructive migration.
+
+The current deploy is not atomic: assets can briefly be mixed while S3 sync and cache invalidation propagate. Keep frontend/API changes compatible with already-open tabs. For larger releases, version asset filenames and retain the previous asset set before changing the HTML entrypoint.
+
+Future CI/CD should use GitHub Actions OIDC with a narrowly scoped AWS role and a production environment approval, not long-lived AWS keys. No automatic deployment workflow or new IAM access is configured yet. Once custom domain aliases/certificates are added, manage them in CloudFormation so a later deployment preserves them.
+
 ## Budget
 
 - DynamoDB Standard: fixed 10 read / 20 write capacity units, no automatic scaling. This fits the published 25 RCU / 25 WCU regional free allowance if other provisioned tables do not consume it. Excess demand is throttled, not scaled.

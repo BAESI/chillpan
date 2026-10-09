@@ -5,6 +5,7 @@ export default function Home() {
     <main className="app-shell">
       <canvas id="chalkboard" aria-label="함께 그리는 칠판" />
       <canvas id="chalkDust" aria-hidden="true" />
+      <p className="board-motto">하루 지나면 다 지운다</p>
       <div className="board-controls">
         <select id="roomSelect" aria-label="칠판 이동" defaultValue="1">
           <option value="1">1반</option>
