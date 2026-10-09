@@ -2,11 +2,43 @@ const canvas = document.querySelector("#chalkboard");
 const ctx = canvas.getContext("2d", { alpha: true });
 const chalkCursor = document.querySelector("#chalkCursor");
 const notice = document.querySelector("#notice");
+const languageButtons = [...document.querySelectorAll("[data-language]")];
 
 const CHALK_BUDGET = 8800;
 const CHALK_SIZE = 5;
 const STORAGE_PREFIX = "chillpan";
 const COLORS = ["#eeeadd", "#dbe8d2", "#f0d1d4", "#ccdced", "#eadfb8"];
+const LANGUAGE_KEY = `${STORAGE_PREFIX}:language`;
+const TEXT = {
+  ko: {
+    tagline: "분필 하나. 하루 하나. 함께 남기는 흔적.",
+    description: "하루에 분필 하나, 모두가 함께 흔적을 남기는 칠판 Chillpan.",
+    board: "함께 그리는 칠판",
+    status: "Chillpan 상태",
+    language: "언어 선택",
+    welcome: "오늘의 분필로 흔적을 남겨요",
+    gone: "오늘의 분필을 다 썼어요. 자정이 지나면 다시 만나요.",
+    finished: "분필을 다 썼어요. 남긴 흔적은 자정까지 머물러요.",
+    newDay: "자정이 되어 새로운 칠판이 열렸어요.",
+  },
+  en: {
+    tagline: "one chalk. one day. everyone leaves a trace.",
+    description: "Chillpan is a quiet global chalkboard where each visitor gets one piece of chalk per day.",
+    board: "Global chalkboard drawing surface",
+    status: "Chillpan status",
+    language: "Language",
+    welcome: "leave a trace with today's chalk",
+    gone: "today's chalk is gone. come back after midnight.",
+    finished: "the chalk is finished. your trace stays until midnight.",
+    newDay: "a new board opened at midnight.",
+  },
+};
+
+let language = localStorage.getItem(LANGUAGE_KEY);
+if (language !== "ko" && language !== "en") {
+  language = navigator.language.toLowerCase().startsWith("ko") ? "ko" : "en";
+}
+let noticeKey = "welcome";
 
 let dayKey = getDayKey();
 let boardKey = `${STORAGE_PREFIX}:board:${dayKey}`;
@@ -23,6 +55,12 @@ let lastSavedAt = 0;
 init();
 
 function init() {
+  applyLanguage();
+  languageButtons.forEach((button) => button.addEventListener("click", () => {
+    language = button.dataset.language;
+    localStorage.setItem(LANGUAGE_KEY, language);
+    applyLanguage();
+  }));
   loadState();
   saveState();
   resizeCanvas();
@@ -118,7 +156,7 @@ function handleStorageSync(event) {
 function startDrawing(event) {
   moveChalkCursor(event);
   if (chalkRemaining <= 0) {
-    showNotice("today's chalk is gone. come back after midnight.");
+    showNotice("gone");
     return;
   }
   canvas.setPointerCapture(event.pointerId);
@@ -144,7 +182,7 @@ function draw(event) {
 
   if (chalkRemaining <= 0) {
     stopDrawing(event);
-    showNotice("the chalk is finished. your trace stays until midnight.");
+    showNotice("finished");
   }
 }
 
@@ -219,11 +257,26 @@ function resetForNewDay(nextDayKey) {
   drawOpeningDust();
   saveState();
   updateChalkCursor();
-  showNotice("a new board opened at midnight.");
+  showNotice("newDay");
 }
 
-function showNotice(message) {
-  notice.textContent = message;
+function applyLanguage() {
+  const text = TEXT[language];
+  document.documentElement.lang = language;
+  document.querySelector("#tagline").textContent = text.tagline;
+  document.querySelector('meta[name="description"]').content = text.description;
+  canvas.setAttribute("aria-label", text.board);
+  document.querySelector(".topbar").setAttribute("aria-label", text.status);
+  document.querySelector(".language-toggle").setAttribute("aria-label", text.language);
+  notice.textContent = text[noticeKey];
+  languageButtons.forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.language === language));
+  });
+}
+
+function showNotice(key) {
+  noticeKey = key;
+  notice.textContent = TEXT[language][key];
   notice.classList.remove("is-hidden");
   clearTimeout(showNotice.timeout);
   showNotice.timeout = setTimeout(softenNotice, 3200);

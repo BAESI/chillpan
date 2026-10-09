@@ -100,6 +100,39 @@ body {
   opacity: 0.92;
 }
 
+.language-toggle {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--faint);
+  border-radius: 4px;
+  pointer-events: auto;
+}
+
+.language-toggle button {
+  width: 38px;
+  height: 32px;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.language-toggle button:hover,
+.language-toggle button[aria-pressed="true"] {
+  background: rgba(242, 240, 230, 0.12);
+  color: var(--ink);
+}
+
+.language-toggle button:focus-visible {
+  outline: 1px solid var(--ink);
+  outline-offset: 2px;
+}
+
 .brand-mark {
   width: 13px;
   height: 52px;
@@ -218,6 +251,10 @@ p {
 
   .brand-mark {
     height: 42px;
+  }
+
+  .language-toggle {
+    align-self: flex-end;
   }
 
   .notice {
