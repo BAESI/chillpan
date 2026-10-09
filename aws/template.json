@@ -1,0 +1,114 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Chillpan low-traffic shared daily chalkboard",
+  "Resources": {
+    "BoardTable": {
+      "Type": "AWS::DynamoDB::Table",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "BillingMode": "PROVISIONED",
+        "ProvisionedThroughput": { "ReadCapacityUnits": 10, "WriteCapacityUnits": 20 },
+        "AttributeDefinitions": [{ "AttributeName": "pk", "AttributeType": "S" }, { "AttributeName": "sk", "AttributeType": "N" }],
+        "KeySchema": [{ "AttributeName": "pk", "KeyType": "HASH" }, { "AttributeName": "sk", "KeyType": "RANGE" }],
+        "TimeToLiveSpecification": { "AttributeName": "expires", "Enabled": true },
+        "Tags": [{ "Key": "Project", "Value": "Chillpan" }]
+      }
+    },
+    "WebBucket": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "PublicAccessBlockConfiguration": { "BlockPublicAcls": true, "BlockPublicPolicy": true, "IgnorePublicAcls": true, "RestrictPublicBuckets": true },
+        "BucketEncryption": { "ServerSideEncryptionConfiguration": [{ "ServerSideEncryptionByDefault": { "SSEAlgorithm": "AES256" } }] },
+        "Tags": [{ "Key": "Project", "Value": "Chillpan" }]
+      }
+    },
+    "BoardRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": { "Version": "2012-10-17", "Statement": [{ "Effect": "Allow", "Principal": { "Service": "lambda.amazonaws.com" }, "Action": "sts:AssumeRole" }] },
+        "ManagedPolicyArns": ["arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"],
+        "Policies": [{ "PolicyName": "BoardData", "PolicyDocument": { "Version": "2012-10-17", "Statement": [{ "Effect": "Allow", "Action": ["dynamodb:GetItem", "dynamodb:BatchGetItem", "dynamodb:Query", "dynamodb:PutItem", "dynamodb:UpdateItem"], "Resource": { "Fn::GetAtt": ["BoardTable", "Arn"] } }] } }]
+      }
+    },
+    "BoardFunction": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Runtime": "nodejs22.x", "Handler": "index.handler", "Architectures": ["arm64"],
+        "Role": { "Fn::GetAtt": ["BoardRole", "Arn"] },
+        "MemorySize": 128, "Timeout": 15,
+        "Environment": { "Variables": { "TABLE_NAME": { "Ref": "BoardTable" } } },
+        "Code": { "ZipFile": "INJECTED_BY_BUILD" },
+        "Tags": [{ "Key": "Project", "Value": "Chillpan" }]
+      }
+    },
+    "BoardLogs": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": { "LogGroupName": { "Fn::Sub": "/aws/lambda/${BoardFunction}" }, "RetentionInDays": 3 }
+    },
+    "BoardUrl": { "Type": "AWS::Lambda::Url", "Properties": { "TargetFunctionArn": { "Ref": "BoardFunction" }, "AuthType": "AWS_IAM" } },
+    "WebOAC": {
+      "Type": "AWS::CloudFront::OriginAccessControl",
+      "Properties": { "OriginAccessControlConfig": { "Name": { "Fn::Sub": "${AWS::StackName}-web" }, "OriginAccessControlOriginType": "s3", "SigningBehavior": "always", "SigningProtocol": "sigv4" } }
+    },
+    "ApiOAC": {
+      "Type": "AWS::CloudFront::OriginAccessControl",
+      "Properties": { "OriginAccessControlConfig": { "Name": { "Fn::Sub": "${AWS::StackName}-api" }, "OriginAccessControlOriginType": "lambda", "SigningBehavior": "always", "SigningProtocol": "sigv4" } }
+    },
+    "ViewerHost": {
+      "Type": "AWS::CloudFront::Function",
+      "Properties": {
+        "Name": { "Fn::Sub": "${AWS::StackName}-viewer-host" }, "AutoPublish": true,
+        "FunctionConfig": { "Comment": "Preserve viewer hostname for same-origin checks", "Runtime": "cloudfront-js-2.0" },
+        "FunctionCode": "function handler(event) { var request = event.request; request.headers['x-chillpan-host'] = {value: request.headers.host.value}; return request; }"
+      }
+    },
+    "ApiForwarding": {
+      "Type": "AWS::CloudFront::OriginRequestPolicy",
+      "Properties": { "OriginRequestPolicyConfig": {
+        "Name": { "Fn::Sub": "${AWS::StackName}-api" },
+        "CookiesConfig": { "CookieBehavior": "none" },
+        "HeadersConfig": { "HeaderBehavior": "whitelist", "Headers": ["Origin", "Content-Type", "x-amz-content-sha256", "x-chillpan-host"] },
+        "QueryStringsConfig": { "QueryStringBehavior": "whitelist", "QueryStrings": ["room", "after"] }
+      } }
+    },
+    "Distribution": {
+      "Type": "AWS::CloudFront::Distribution",
+      "Properties": { "DistributionConfig": {
+        "Enabled": true, "DefaultRootObject": "index.html", "HttpVersion": "http2and3", "IPV6Enabled": true, "PriceClass": "PriceClass_200",
+        "ViewerCertificate": { "CloudFrontDefaultCertificate": true },
+        "Origins": [
+          { "Id": "web", "DomainName": { "Fn::GetAtt": ["WebBucket", "RegionalDomainName"] }, "OriginAccessControlId": { "Ref": "WebOAC" }, "S3OriginConfig": { "OriginAccessIdentity": "" } },
+          { "Id": "api", "DomainName": { "Fn::Select": [2, { "Fn::Split": ["/", { "Fn::GetAtt": ["BoardUrl", "FunctionUrl"] }] }] }, "OriginAccessControlId": { "Ref": "ApiOAC" }, "CustomOriginConfig": { "OriginProtocolPolicy": "https-only", "HTTPSPort": 443, "OriginSSLProtocols": ["TLSv1.2"] } }
+        ],
+        "DefaultCacheBehavior": { "TargetOriginId": "web", "ViewerProtocolPolicy": "redirect-to-https", "Compress": true, "AllowedMethods": ["GET", "HEAD", "OPTIONS"], "CachedMethods": ["GET", "HEAD"], "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6" },
+        "CacheBehaviors": [{ "PathPattern": "/api/*", "TargetOriginId": "api", "ViewerProtocolPolicy": "https-only", "Compress": true,
+          "AllowedMethods": ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"], "CachedMethods": ["GET", "HEAD"],
+          "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad", "OriginRequestPolicyId": { "Ref": "ApiForwarding" },
+          "FunctionAssociations": [{ "EventType": "viewer-request", "FunctionARN": { "Fn::GetAtt": ["ViewerHost", "FunctionARN"] } }]
+        }]
+      }, "Tags": [{ "Key": "Project", "Value": "Chillpan" }] }
+    },
+    "WebPolicy": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": { "Bucket": { "Ref": "WebBucket" }, "PolicyDocument": { "Version": "2012-10-17", "Statement": [{ "Effect": "Allow", "Principal": { "Service": "cloudfront.amazonaws.com" }, "Action": "s3:GetObject", "Resource": { "Fn::Sub": "${WebBucket.Arn}/*" }, "Condition": { "StringEquals": { "AWS:SourceArn": { "Fn::Sub": "arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}" } } } }] } }
+    },
+    "AllowCloudFrontUrl": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": { "FunctionName": { "Ref": "BoardFunction" }, "Action": "lambda:InvokeFunctionUrl", "Principal": "cloudfront.amazonaws.com", "SourceArn": { "Fn::Sub": "arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}" } }
+    },
+    "AllowCloudFrontInvoke": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": { "FunctionName": { "Ref": "BoardFunction" }, "Action": "lambda:InvokeFunction", "Principal": "cloudfront.amazonaws.com", "SourceArn": { "Fn::Sub": "arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}" } }
+    }
+  },
+  "Outputs": {
+    "SiteUrl": { "Value": { "Fn::Sub": "https://${Distribution.DomainName}" } },
+    "Bucket": { "Value": { "Ref": "WebBucket" } },
+    "DistributionId": { "Value": { "Ref": "Distribution" } },
+    "Table": { "Value": { "Ref": "BoardTable" } },
+    "FunctionName": { "Value": { "Ref": "BoardFunction" } }
+  }
+}

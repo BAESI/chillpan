@@ -46,3 +46,5 @@ next-env.d.ts
 /work/
 /.playwright-cli/
 *.tsbuildinfo
+/.aws-build/
+chillpan-site.tar.gz

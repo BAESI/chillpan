@@ -10,6 +10,8 @@ const dustCtx = dustCanvas.getContext("2d");
 
 const CHALK_BUDGET = 8800;
 const CHALK_SIZE = 5;
+const SYNC_INTERVAL = Math.max(750, Number(document.body?.dataset?.syncMs) || 750);
+const STROKE_INTERVAL = Math.max(120, Number(document.body?.dataset?.strokeMs) || 120);
 const STORAGE_PREFIX = "chillpan";
 const COLORS = ["#f28eaa", "#82d9ad", "#85bdf3", "#f1d46f", "#c6a0ee", "#f5ad7c"];
 const TEXT = {
@@ -202,7 +204,7 @@ function loadBoard() {
 }
 
 async function pollBoard(generation) {
-  let delay = document.hidden ? 4000 : 750;
+  let delay = document.hidden ? Math.max(4000, SYNC_INTERVAL * 10) : SYNC_INTERVAL;
   try {
     const response = await fetch(`/api/board?room=${currentRoom}&after=${boardCursor}`, { cache: "no-store" });
     if (!response.ok) throw new Error("Board unavailable");
@@ -287,9 +289,12 @@ async function flushStrokes() {
   const batch = pendingStrokes.slice(0, 32);
   let retry = false;
   try {
+    const body = JSON.stringify({ strokes: batch });
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body));
+    const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
     const response = await fetch("/api/board", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ strokes: batch }),
+      method: "POST", headers: { "Content-Type": "application/json", "x-amz-content-sha256": hash },
+      body,
     });
     if (response.status === 409) {
       const data = await response.json();
@@ -344,7 +349,7 @@ function draw(event) {
   lastStrokeTime = now;
   lastPoint = point;
   currentStroke.points.push(normalizedPoint(point));
-  if (currentStroke.points.length >= 64 || now - strokeStartedAt >= 120) queueStroke(true);
+  if (currentStroke.points.length >= 64 || now - strokeStartedAt >= STROKE_INTERVAL) queueStroke(true);
   updateChalkCursor();
   saveState();
 
