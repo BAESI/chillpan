@@ -37,7 +37,7 @@ body {
     repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 7px);
 }
 
-#chalkboard {
+#chalkboard, #chalkDust {
   position: absolute;
   top: 0;
   left: 0;
@@ -47,6 +47,8 @@ body {
   cursor: none;
   touch-action: none;
 }
+
+#chalkDust { z-index: 1; pointer-events: none; }
 
 .chalk-tray {
   position: absolute;
@@ -77,30 +79,20 @@ body {
   position: absolute;
   z-index: 4;
   bottom: calc(var(--tray-height) + 24px);
-  left: 50%;
-  transform: translateX(-50%);
+  left: 24px;
   display: flex;
   align-items: center;
   gap: 12px;
   max-width: calc(100% - 24px);
 }
 
-.room-toggle {
-  display: flex;
-  padding: 3px;
-  gap: 2px;
+#roomSelect, .new-chalk {
+  height: 40px;
+  padding: 0 12px;
   border: 1px solid rgba(242, 240, 230, 0.2);
   border-radius: 5px;
-  background: rgba(15, 41, 34, 0.86);
-}
-
-.board-controls button {
-  height: 38px;
-  padding: 0 14px;
-  border: 0;
-  border-radius: 3px;
-  background: transparent;
-  color: var(--muted);
+  background: rgba(15, 41, 34, 0.92);
+  color: var(--ink);
   font: inherit;
   font-size: 12px;
   white-space: nowrap;
@@ -108,27 +100,23 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-.room-toggle button { min-width: 52px; }
+#roomSelect { width: 96px; color-scheme: dark; }
+#roomSelect:focus-visible, .new-chalk:focus-visible { outline: 1px solid var(--ink); outline-offset: 3px; }
+.new-chalk:hover { background: #244d41; }
 
-.room-toggle button[aria-pressed="true"] {
-  color: var(--ink);
-  background: rgba(242, 240, 230, 0.16);
-}
-
-.board-controls button:hover { color: var(--ink); background: rgba(242, 240, 230, 0.1); }
-.board-controls button:focus-visible { outline: 1px solid var(--ink); outline-offset: 3px; }
-
-.board-controls .new-chalk {
+.new-chalk {
+  position: absolute;
+  z-index: 4;
+  bottom: calc(var(--tray-height) + 24px);
+  right: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  height: 46px;
-  border: 1px solid rgba(242, 240, 230, 0.2);
-  border-radius: 5px;
-  background: rgba(15, 41, 34, 0.86);
-  color: var(--ink);
 }
+
+.sound-toggle { display: flex; align-items: center; gap: 6px; min-height: 40px; color: var(--muted); font-size: 11px; cursor: pointer; }
+.sound-toggle input { width: 14px; height: 14px; margin: 0; accent-color: #a8d5be; cursor: pointer; }
 
 .chalk-swatch { width: 8px; height: 8px; border-radius: 50%; background: var(--chalk); }
 
@@ -185,8 +173,6 @@ body {
 
 @media (max-width: 760px) {
   :root { --tray-height: calc(62px + env(safe-area-inset-bottom, 0px)); }
-  .board-controls { gap: 8px; }
-  .board-controls button { padding: 0 8px; font-size: 11px; }
-  .room-toggle button { min-width: 42px; }
-  .board-controls .new-chalk { gap: 8px; }
+  .board-controls { left: 16px; gap: 8px; }
+  .new-chalk { right: 16px; gap: 8px; padding: 0 10px; font-size: 11px; }
 }

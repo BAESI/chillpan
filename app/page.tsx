@@ -1,0 +1,29 @@
+import ChalkboardBoot from "./chalkboard-boot";
+
+export default function Home() {
+  return <>
+    <main className="app-shell">
+      <canvas id="chalkboard" aria-label="함께 그리는 칠판" />
+      <canvas id="chalkDust" aria-hidden="true" />
+      <div className="board-controls">
+        <select id="roomSelect" aria-label="칠판 이동" defaultValue="1">
+          <option value="1">1반</option>
+          <option value="2">2반</option>
+          <option value="3">3반</option>
+        </select>
+        <label className="sound-toggle">
+          <input id="soundToggle" type="checkbox" defaultChecked />
+          <span id="soundLabel">소리</span>
+        </label>
+      </div>
+      <button className="new-chalk" id="newChalkButton" type="button">
+        <span className="chalk-swatch" aria-hidden="true" />
+        <span id="newChalkLabel">새 분필</span>
+      </button>
+      <div className="chalk-tray" aria-hidden="true" />
+      <div className="chalk-cursor" id="chalkCursor" aria-hidden="true"><span /></div>
+      <div className="notice is-hidden" id="notice" role="status" aria-live="polite" />
+    </main>
+    <ChalkboardBoot />
+  </>;
+}
