@@ -153,10 +153,8 @@ function saveState() {
 }
 
 function resizeCanvas() {
-  const previous = document.createElement("canvas");
-  previous.width = canvas.width;
-  previous.height = canvas.height;
-  previous.getContext("2d").drawImage(canvas, 0, 0);
+  const hadBoard = width > 0 && height > 0;
+  if (hadBoard) stopDrawing();
 
   const bounds = canvas.getBoundingClientRect();
   pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
@@ -167,11 +165,11 @@ function resizeCanvas() {
   ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  ctx.drawImage(previous, 0, 0, width, height);
   dustCanvas.width = canvas.width;
   dustCanvas.height = canvas.height;
   dustCtx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
   clearFallingDust();
+  if (hadBoard) loadBoard();
 }
 
 function drawOpeningDust() {
@@ -239,7 +237,8 @@ function drawSharedStroke(stroke) {
   ctx.save();
   ctx.strokeStyle = stroke.color;
   ctx.fillStyle = stroke.color;
-  ctx.lineWidth = stroke.size * width;
+  // Chalk has one fixed CSS-pixel width, including strokes saved by older clients.
+  ctx.lineWidth = CHALK_SIZE;
   ctx.globalAlpha = 0.78;
   ctx.beginPath();
   if (points.length === 1) {
