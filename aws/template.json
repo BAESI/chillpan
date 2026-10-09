@@ -1,6 +1,18 @@
 {
   "AWSTemplateFormatVersion": "2010-09-09",
   "Description": "Chillpan low-traffic shared daily chalkboard",
+  "Parameters": {
+    "DomainName": { "Type": "String", "Default": "" },
+    "CertificateArn": { "Type": "String", "Default": "" },
+    "HostedZoneId": { "Type": "String", "Default": "" }
+  },
+  "Conditions": {
+    "HasCustomDomain": { "Fn::And": [
+      { "Fn::Not": [{ "Fn::Equals": [{ "Ref": "DomainName" }, ""] }] },
+      { "Fn::Not": [{ "Fn::Equals": [{ "Ref": "CertificateArn" }, ""] }] },
+      { "Fn::Not": [{ "Fn::Equals": [{ "Ref": "HostedZoneId" }, ""] }] }
+    ] }
+  },
   "Resources": {
     "BoardTable": {
       "Type": "AWS::DynamoDB::Table",
@@ -78,7 +90,10 @@
       "Type": "AWS::CloudFront::Distribution",
       "Properties": { "DistributionConfig": {
         "Enabled": true, "DefaultRootObject": "index.html", "HttpVersion": "http2and3", "IPV6Enabled": true, "PriceClass": "PriceClass_200",
-        "ViewerCertificate": { "CloudFrontDefaultCertificate": true },
+        "Aliases": { "Fn::If": ["HasCustomDomain", [{ "Ref": "DomainName" }], { "Ref": "AWS::NoValue" }] },
+        "ViewerCertificate": { "Fn::If": ["HasCustomDomain", {
+          "AcmCertificateArn": { "Ref": "CertificateArn" }, "SslSupportMethod": "sni-only", "MinimumProtocolVersion": "TLSv1.2_2021"
+        }, { "CloudFrontDefaultCertificate": true }] },
         "Origins": [
           { "Id": "web", "DomainName": { "Fn::GetAtt": ["WebBucket", "RegionalDomainName"] }, "OriginAccessControlId": { "Ref": "WebOAC" }, "S3OriginConfig": { "OriginAccessIdentity": "" } },
           { "Id": "api", "DomainName": { "Fn::Select": [2, { "Fn::Split": ["/", { "Fn::GetAtt": ["BoardUrl", "FunctionUrl"] }] }] }, "OriginAccessControlId": { "Ref": "ApiOAC" }, "CustomOriginConfig": { "OriginProtocolPolicy": "https-only", "HTTPSPort": 443, "OriginSSLProtocols": ["TLSv1.2"] } }
@@ -90,6 +105,17 @@
           "FunctionAssociations": [{ "EventType": "viewer-request", "FunctionARN": { "Fn::GetAtt": ["ViewerHost", "FunctionARN"] } }]
         }]
       }, "Tags": [{ "Key": "Project", "Value": "Chillpan" }] }
+    },
+    "DomainRecords": {
+      "Type": "AWS::Route53::RecordSetGroup",
+      "Condition": "HasCustomDomain",
+      "Properties": {
+        "HostedZoneId": { "Ref": "HostedZoneId" },
+        "RecordSets": [
+          { "Name": { "Ref": "DomainName" }, "Type": "A", "AliasTarget": { "DNSName": { "Fn::GetAtt": ["Distribution", "DomainName"] }, "HostedZoneId": "Z2FDTNDATAQYW2", "EvaluateTargetHealth": false } },
+          { "Name": { "Ref": "DomainName" }, "Type": "AAAA", "AliasTarget": { "DNSName": { "Fn::GetAtt": ["Distribution", "DomainName"] }, "HostedZoneId": "Z2FDTNDATAQYW2", "EvaluateTargetHealth": false } }
+        ]
+      }
     },
     "WebPolicy": {
       "Type": "AWS::S3::BucketPolicy",
@@ -105,7 +131,7 @@
     }
   },
   "Outputs": {
-    "SiteUrl": { "Value": { "Fn::Sub": "https://${Distribution.DomainName}" } },
+    "SiteUrl": { "Value": { "Fn::If": ["HasCustomDomain", { "Fn::Sub": "https://${DomainName}" }, { "Fn::Sub": "https://${Distribution.DomainName}" }] } },
     "Bucket": { "Value": { "Ref": "WebBucket" } },
     "DistributionId": { "Value": { "Ref": "Distribution" } },
     "Table": { "Value": { "Ref": "BoardTable" } },

@@ -53,6 +53,22 @@ Official pricing: [DynamoDB](https://aws.amazon.com/dynamodb/pricing/), [Lambda]
 
 Choose and register the domain separately. Create an ACM certificate in `us-east-1`, validate ownership via DNS, then add the domain alias/certificate to CloudFront and point the domain to the distribution. Never make the S3 bucket public. Domain registration renews annually; check the renewal price, not just the first-year offer.
 
+Production domain: `chillpan.day`. Reuse the registrar-created public hosted zone `Z08700191SEVNREB4C6PA`; do not create a second zone. The `chillpan-certificate` stack in `us-east-1` manages the DNS-validated certificate using `aws/certificate.json`. Keep its validation CNAME for automatic renewal.
+
+Initial domain attachment (certificate must be issued first):
+
+```sh
+aws cloudformation deploy --stack-name chillpan-certificate --template-file aws/certificate.json \
+  --parameter-overrides DomainName=chillpan.day HostedZoneId=Z08700191SEVNREB4C6PA \
+  --profile chillpan-personal --region us-east-1
+
+node aws/deploy.mjs --profile chillpan-personal --account 862292240027 --deploy \
+  --domain chillpan.day --hosted-zone Z08700191SEVNREB4C6PA \
+  --certificate ISSUED_CERTIFICATE_ARN_FROM_CERTIFICATE_STACK
+```
+
+The main stack manages the CloudFront alias, SNI HTTPS certificate, and Route 53 A/AAAA alias records. Subsequent normal deploys omit these flags: CloudFormation deploy preserves the existing parameter values. The original CloudFront URL remains usable and shares the same Lambda/table. A new hostname has separate browser-local chalk/session state, but not separate shared drawings. Do not delete the certificate stack while the distribution uses it.
+
 ## AdSense Preparation
 
 Advertising is disabled. No fake publisher ID, tracking script, or ad placement is shipped.

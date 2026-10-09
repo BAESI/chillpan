@@ -1,0 +1,20 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Chillpan CloudFront certificate; deploy in us-east-1",
+  "Parameters": {
+    "DomainName": { "Type": "String" },
+    "HostedZoneId": { "Type": "AWS::Route53::HostedZone::Id" }
+  },
+  "Resources": {
+    "Certificate": {
+      "Type": "AWS::CertificateManager::Certificate",
+      "Properties": {
+        "DomainName": { "Ref": "DomainName" },
+        "ValidationMethod": "DNS",
+        "DomainValidationOptions": [{ "DomainName": { "Ref": "DomainName" }, "HostedZoneId": { "Ref": "HostedZoneId" } }],
+        "Tags": [{ "Key": "Project", "Value": "Chillpan" }]
+      }
+    }
+  },
+  "Outputs": { "CertificateArn": { "Value": { "Ref": "Certificate" } } }
+}
