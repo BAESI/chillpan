@@ -57,6 +57,29 @@ test("older saved chalk without kind loads as normal", () => {
   assert.equal(run("chalkRemaining"), 400);
 });
 
+test("hidden fanfare respects mute, replaces previous notes and cleans up", () => {
+  const { run } = board();
+  run(`var started = 0, stopped = 0, disconnected = 0;
+    prepareChalkSound = () => {};
+    chalkAudio = { context: {
+      currentTime: 10, destination: {},
+      createOscillator: () => ({frequency:{value:0}, connect(node){return node}, disconnect(){}, start(){started++}, stop(){stopped++}}),
+      createGain: () => ({gain:{setValueAtTime(){},linearRampToValueAtTime(){},exponentialRampToValueAtTime(){}},
+        connect(){}, disconnect(){disconnected++}})
+    }};
+    soundEnabled = false; playDiscoverySound();`);
+  assert.equal(run("started"), 0);
+  run("soundEnabled = true; playDiscoverySound()");
+  assert.equal(run("started"), 5);
+  assert.equal(run("discoveryNotes.length"), 5);
+  run("playDiscoverySound()");
+  assert.equal(run("started"), 10);
+  assert.equal(run("disconnected"), 5);
+  run("stopDiscoverySound()");
+  assert.equal(run("discoveryNotes.length"), 0);
+  assert.equal(run("disconnected"), 10);
+});
+
 test("eraser restores a bounded budget and uses its own cursor and wire tool", () => {
   const { run, cursor } = board({ chalkKind: "eraser", chalkRemaining: 99999 });
   run("loadState(); updateChalkCursor(); width = 390; height = 700; beginStroke({x:20,y:30})");

@@ -139,7 +139,8 @@ body {
   position: absolute;
   z-index: 4;
   bottom: calc(var(--tray-height) + 24px);
-  right: 24px;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -226,16 +227,27 @@ body {
   justify-content: center;
   column-gap: 0.4em;
   row-gap: 3px;
-  max-width: min(440px, calc(100% - 40px));
-  font-size: 16px;
+  max-width: min(520px, calc(100% - 40px));
+  bottom: calc(var(--tray-height) + 112px);
+  padding: 18px 22px;
+  border-radius: 6px;
+  background: rgba(9, 29, 23, 0.94);
+  border: 1px solid rgba(241, 212, 111, 0.7);
+  box-shadow: 0 0 22px rgba(241, 212, 111, 0.2), 0 8px 28px rgba(0, 0, 0, 0.32);
+  font-size: 22px;
   font-weight: 600;
   line-height: 1.8;
   opacity: 1;
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
+  text-shadow: 0 0 8px currentColor, 0 2px 3px #071c14;
 }
 
-.notice.is-hidden-find:not(.is-hidden) { animation: chalk-discovery 450ms ease-out both; }
+.notice.is-hidden-find:not(.is-hidden) { animation: chalk-discovery 450ms ease-out both, chalk-glow 1800ms ease-in-out 450ms 4; }
 .notice.is-hidden-find.is-hidden { opacity: 0; }
+
+@keyframes chalk-glow {
+  0%, 100% { box-shadow: 0 0 22px rgba(241, 212, 111, 0.2), 0 8px 28px rgba(0, 0, 0, 0.32); }
+  50% { box-shadow: 0 0 34px rgba(241, 212, 111, 0.45), 0 0 58px rgba(130, 217, 173, 0.16); }
+}
 
 @keyframes chalk-discovery {
   from { opacity: 0; translate: 0 8px; }
@@ -249,6 +261,8 @@ body {
 @media (max-width: 760px) {
   :root { --tray-height: calc(62px + env(safe-area-inset-bottom, 0px)); }
   .board-controls { left: 16px; gap: 8px; }
-  .new-chalk { right: 16px; gap: 8px; padding: 0 10px; font-size: 11px; }
+  .new-chalk { bottom: calc(var(--tray-height) + 76px); gap: 8px; padding: 0 10px; font-size: 11px; }
+  .notice { bottom: calc(var(--tray-height) + 132px); }
+  .notice.is-hidden-find { bottom: calc(var(--tray-height) + 140px); font-size: 19px; padding: 14px 16px; }
   .board-motto { left: calc(18px + env(safe-area-inset-left, 0px)); top: calc(18px + env(safe-area-inset-top, 0px)); max-width: calc(100% - 36px); font-size: 26px; }
 }

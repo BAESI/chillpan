@@ -100,6 +100,7 @@ const particles = [];
 let soundEnabled = localStorage.getItem(`${STORAGE_PREFIX}:sound`) !== "off";
 let chalkAudio = null;
 let soundStopTimer = 0;
+let discoveryNotes = [];
 
 init();
 
@@ -112,7 +113,7 @@ function init() {
     soundEnabled = soundToggle.checked;
     localStorage.setItem(`${STORAGE_PREFIX}:sound`, soundEnabled ? "on" : "off");
     if (soundEnabled) prepareChalkSound();
-    else stopChalkSound();
+    else { stopChalkSound(); stopDiscoverySound(); }
   });
   loadState();
   saveState();
@@ -134,6 +135,7 @@ function init() {
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
       stopDrawing();
+      stopDiscoverySound();
       clearFallingDust();
     }
   });
@@ -569,6 +571,49 @@ function stopChalkSound() {
   gain.gain.setTargetAtTime(0, context.currentTime, 0.015);
 }
 
+function stopDiscoverySound() {
+  for (const { oscillator, gain } of discoveryNotes) {
+    gain.disconnect();
+    try { oscillator.stop(); } catch { /* Already completed. */ }
+  }
+  discoveryNotes = [];
+}
+
+function playDiscoverySound() {
+  if (!soundEnabled) return;
+  prepareChalkSound();
+  if (!chalkAudio) return;
+  stopDiscoverySound();
+  try {
+    const { context } = chalkAudio;
+    const start = context.currentTime + 0.04;
+    // Three rising brass-like notes: pa-ra-bam, with a longer final chord.
+    for (const [offset, duration, frequencies] of [[0, 0.14, [392]], [0.16, 0.14, [523.25]], [0.32, 0.65, [523.25, 659.25, 783.99]]]) {
+      for (const frequency of frequencies) {
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        oscillator.type = "triangle";
+        oscillator.frequency.value = frequency;
+        gain.gain.setValueAtTime(0, start + offset);
+        gain.gain.linearRampToValueAtTime(0.09 / frequencies.length, start + offset + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + offset + duration);
+        oscillator.connect(gain).connect(context.destination);
+        const note = { oscillator, gain };
+        discoveryNotes.push(note);
+        oscillator.onended = () => {
+          oscillator.disconnect();
+          gain.disconnect();
+          discoveryNotes = discoveryNotes.filter((active) => active !== note);
+        };
+        oscillator.start(start + offset);
+        oscillator.stop(start + offset + duration + 0.02);
+      }
+    }
+  } catch {
+    stopDiscoverySound();
+  }
+}
+
 function getPoint(event) {
   const rect = canvas.getBoundingClientRect();
   return {
@@ -678,6 +723,7 @@ function showNotice(key) {
   const hidden = key.startsWith("hidden");
   notice.classList.toggle("is-hidden-find", hidden);
   if (hidden) {
+    playDiscoverySound();
     const words = TEXT[language][key].split(" ");
     notice.replaceChildren(...words.map((word, index) => {
       const span = document.createElement("span");
@@ -688,7 +734,7 @@ function showNotice(key) {
   } else notice.textContent = TEXT[language][key];
   notice.classList.remove("is-hidden");
   clearTimeout(showNotice.timeout);
-  showNotice.timeout = setTimeout(softenNotice, hidden ? 5400 : 3200);
+  showNotice.timeout = setTimeout(softenNotice, hidden ? 8000 : 3200);
 }
 
 function softenNotice() {
