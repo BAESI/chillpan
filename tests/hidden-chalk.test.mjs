@@ -189,6 +189,39 @@ test("confirmed history advances once during input, accepts new actions and canc
   assert.equal(run("painted.length"), 201);
 });
 
+test("initial history stays offscreen across pages and publishes once after rendering completes", () => {
+  const {run, sandbox} = board();
+  const frames=[];
+  let clock=0;
+  sandbox.requestAnimationFrame=callback=>{frames.push(callback);return frames.length};
+  sandbox.performance.now=()=>++clock;
+  run(`var commits=0, busy=[]; compositeRegion=()=>commits++; canvas.setAttribute=(key,value)=>busy.push(value);
+    drawStrokeOn=()=>{}; loadingBoard=true; initialHistoryComplete=false;
+    sharedStrokes=Array.from({length:200},(_,i)=>({strokeId:String(i),points:[[.1,.2]]}));renderBoardView()`);
+  frames.shift()();
+  assert.equal(run("commits"),0);
+  assert.equal(run("loadingBoard"),true);
+  while(frames.length) frames.shift()();
+  assert.equal(run("renderedCount"),200);
+  assert.equal(run("commits"),0);
+  run('sharedStrokes.push({strokeId:"last-page",points:[[.3,.4]]}); initialHistoryComplete=true; renderBoardView(); finishInitialBoard()');
+  assert.equal(run("commits"),0);
+  while(frames.length) frames.shift()();
+  assert.equal(run("commits"),1);
+  assert.equal(run("loadingBoard"),false);
+  assert.deepEqual(Array.from(run("busy")),["false"]);
+  run('sharedStrokes.push({strokeId:"live",points:[[.4,.5]]});renderBoardView()');
+  while(frames.length) frames.shift()();
+  assert.equal(run("commits"),2);
+});
+
+test("empty initial boards finish without waiting for a render frame", () => {
+  const {run}=board();
+  run('var commits=0; compositeRegion=()=>commits++;canvas.setAttribute=()=>{};loadingBoard=true;initialHistoryComplete=true;finishInitialBoard();finishInitialBoard()');
+  assert.equal(run("loadingBoard"),false);
+  assert.equal(run("commits"),1);
+});
+
 test("pointer movement is coalesced to one sample per frame", () => {
   const { run, sandbox } = board();
   const frames = [];

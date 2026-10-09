@@ -24,9 +24,41 @@ async function draw(page, eraser = false, hold = false) {
   }
   if (!hold) await page.mouse.up();
 }
+async function verifyInitialLoad(browser) {
+  const results=[];
+  for (const width of [1280,390]) {
+    const context=await browser.newContext({viewport:{width,height:900},deviceScaleFactor:2});
+    await setup(context);
+    await context.addInitScript(()=>{
+      window.__initialDraws=0;
+      const draw=CanvasRenderingContext2D.prototype.drawImage;
+      CanvasRenderingContext2D.prototype.drawImage=function(...args){
+        if(this.canvas.id==="chalkboard") window.__initialDraws++;
+        return draw.apply(this,args);
+      };
+    });
+    const page=await context.newPage();
+    const cpu=await context.newCDPSession(page);await cpu.send("Emulation.setCPUThrottlingRate",{rate:4});
+    await page.goto(`${origin}/1`);await ready(page);
+    const initial=await page.evaluate(()=>({draws:window.__initialDraws,...window.__boardQA.stats()}));
+    assert.equal(initial.draws,2); // Background once, completed history once; no intermediate frames.
+    assert.equal(initial.rendered,initial.shared);
+    await page.reload();await ready(page);
+    assert.equal(await page.evaluate(()=>window.__initialDraws),2);
+    results.push({width,history:initial.shared,mainCanvasCopies:initial.draws,reload:true});
+    await page.goto(`${origin}/1`);
+    await page.waitForFunction(()=>window.__boardQA && window.__boardQA.stats().busy);
+    await page.selectOption("#roomSelect","3");await ready(page);
+    await page.waitForTimeout(250);
+    assert.equal(await page.evaluate(()=>window.__boardQA.stats().shared),0);
+    await context.close();
+  }
+  return results;
+}
 export async function verify(page) {
   const browser = page.context().browser();
   const report = {};
+  report.initialSnapshot=await verifyInitialLoad(browser);
   for (const version of ["baseline", "1"]) {
     const context = await browser.newContext({viewport:{width:1280,height:900},deviceScaleFactor:2});
     await setup(context);

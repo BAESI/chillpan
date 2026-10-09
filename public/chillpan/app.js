@@ -76,6 +76,7 @@ let replayFrame = 0;
 let drawing = false;
 let activePointerId = null;
 let loadingBoard = false;
+let initialHistoryComplete = false;
 let boardLoadId = 0;
 let lastPoint = null;
 let chalkRemaining = CHALK_BUDGET;
@@ -290,10 +291,10 @@ function loadBoard() {
   seenStrokes.clear();
   pendingStrokes.forEach((stroke) => seenStrokes.add(stroke.strokeId));
   loadingBoard = true;
+  initialHistoryComplete = false;
   canvas.setAttribute("aria-busy", "true");
   ctx.clearRect(0, 0, width, height);
   ctx.drawImage(confirmedSurface, 0, 0, width, height);
-  pendingStrokes.filter((stroke) => stroke.day === dayKey && String(stroke.room) === currentRoom).forEach(drawSharedStroke);
   pollBoard(generation);
   connectLive(true);
 }
@@ -328,8 +329,8 @@ async function pollBoard(generation) {
     if (boardNeedsReplay) renderBoardView();
     boardCursor = data.cursor;
     if (!data.hasMore) {
-      loadingBoard = false;
-      canvas.setAttribute("aria-busy", "false");
+      initialHistoryComplete = true;
+      finishInitialBoard();
     }
     else delay = 0;
     syncFailed = false;
@@ -344,6 +345,14 @@ async function pollBoard(generation) {
     if (pollAgain) { pollAgain = false; delay = 0; }
     pollTimer = setTimeout(() => pollBoard(generation), delay);
   }
+}
+
+function finishInitialBoard() {
+  if (!loadingBoard || !initialHistoryComplete || boardNeedsReplay || renderedCount !== sharedStrokes.length) return;
+  // Publish only the complete initial state, never intermediate drawing/erasing history.
+  compositeRegion({ left: 0, top: 0, right: width, bottom: height });
+  loadingBoard = false;
+  canvas.setAttribute("aria-busy", "false");
 }
 
 function connectLive(force = false) {
@@ -427,9 +436,10 @@ function renderBoardView() {
         steps = strokeSteps(active);
       }
       if (!active) {
-        if (dirty) compositeRegion(dirty);
+        if (dirty && !loadingBoard) compositeRegion(dirty);
         boardNeedsReplay = false;
         replayFrame = 0;
+        finishInitialBoard();
         return;
       }
       if (steps.next().done) {
@@ -441,7 +451,7 @@ function renderBoardView() {
         active = null;
       }
     }
-    if (dirty) compositeRegion(dirty);
+    if (dirty && !loadingBoard) compositeRegion(dirty);
     replayFrame = requestAnimationFrame(pump);
   }
   replayFrame = requestAnimationFrame(pump);
