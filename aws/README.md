@@ -71,6 +71,8 @@ The main stack manages the CloudFront alias, SNI HTTPS certificate, and Route 53
 
 ## Hidden Tools
 
+Classroom share links are `/1`, `/2`, and `/3`. The path takes precedence over the last room in local storage; the selector updates browser history and back/forward switches rooms. CloudFront rewrites only those known room paths (including trailing slashes) to the static app; API and asset routing are unchanged. The private Sites mirror uses the matching dynamic page route.
+
 New chalk rolls: normal 92%, rainbow 3%, giant 2%, eraser 2%, gold 1%. Rainbow changes palette at existing stroke chunk boundaries; gold adds one accepted ink color; giant changes cursor dimensions only. All ink keeps the fixed 5 CSS-pixel width. Discovery messages are transient and respect reduced-motion preferences.
 
 Erasers have a separate 9,600-unit device-local budget, a shrinking rectangular cursor, and a fixed 32 CSS-pixel brush. Each pass blurs existing pigment and lifts 38% of its opacity; repeated passes clean the same area. The fixed motto is outside the drawing canvas and cannot be erased. Budgets/rolls are client-side game mechanics, not server-enforced abuse protection.

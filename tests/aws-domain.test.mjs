@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import vm from "node:vm";
 
 const template = JSON.parse(readFileSync(new URL("../aws/template.json", import.meta.url)));
 const certificate = JSON.parse(readFileSync(new URL("../aws/certificate.json", import.meta.url)));
@@ -28,4 +29,18 @@ test("certificate DNS validation reuses the registered hosted zone", () => {
   const props = certificate.Resources.Certificate.Properties;
   assert.equal(props.ValidationMethod, "DNS");
   assert.deepEqual(props.DomainValidationOptions, [{ DomainName: { Ref: "DomainName" }, HostedZoneId: { Ref: "HostedZoneId" } }]);
+});
+
+test("classroom deep links rewrite only known room paths and leave API/assets unchanged", () => {
+  const sandbox = vm.createContext({});
+  vm.runInContext(template.Resources.RoomRoutes.Properties.FunctionCode, sandbox);
+  for (const uri of ["/1", "/2/", "/3"]) {
+    assert.equal(sandbox.handler({request:{uri}}).uri, "/index.html");
+  }
+  for (const uri of ["/api/board", "/chillpan/app.js", "/ads.txt", "/13", "/4"]) {
+    assert.equal(sandbox.handler({request:{uri}}).uri, uri);
+  }
+  const config = template.Resources.Distribution.Properties.DistributionConfig;
+  assert.deepEqual(config.DefaultCacheBehavior.FunctionAssociations[0].FunctionARN,
+    {"Fn::GetAtt":["RoomRoutes","FunctionARN"]});
 });

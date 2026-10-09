@@ -168,7 +168,7 @@ body {
 }
 
 .chalk-cursor.is-visible { opacity: 1; }
-.chalk-cursor.is-spent { opacity: 0.42; }
+.chalk-cursor.is-visible.is-spent { opacity: 0.42; }
 
 .chalk-cursor span {
   width: 100%;

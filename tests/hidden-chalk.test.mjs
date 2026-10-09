@@ -4,7 +4,7 @@ import vm from "node:vm";
 import test from "node:test";
 
 const source = readFileSync(new URL("../public/chillpan/app.js", import.meta.url), "utf8");
-function board(saved = {}) {
+function board(saved = {}, pathname = "/") {
   const properties = {};
   const root = { dataset: {}, style: { setProperty: (key, value) => { properties[key] = value; } } };
   const cursor = { style: {}, classList: { toggle() {} } };
@@ -13,7 +13,7 @@ function board(saved = {}) {
     document: { documentElement: root, querySelector: (selector) => selector === "#chalkCursor" ? cursor : { getContext: () => ({}) } },
     navigator: { language: "ko-KR" }, localStorage: storage,
     sessionStorage: { getItem: () => "[]", setItem() {} },
-    window: {}, performance: { now: () => 1000 }, crypto: { randomUUID: () => "stroke-id" },
+    window: { location: { pathname, search: "", hash: "" } }, performance: { now: () => 1000 }, crypto: { randomUUID: () => "stroke-id" },
   });
   vm.runInContext(source.replace("\ninit();\n", "\n"), sandbox);
   return { sandbox, root, cursor, properties, run: (code) => vm.runInContext(code, sandbox) };
@@ -192,4 +192,30 @@ test("pointer coordinates do not force a layout read for each movement", () => {
   run(`canvas.getBoundingClientRect = () => { throw new Error("forced layout") };
     boardBounds = {left:10,top:20};`);
   assert.deepEqual(JSON.parse(JSON.stringify(run("getPoint({clientX:30,clientY:50})"))), {x:20,y:30});
+});
+
+test("classroom share paths override saved room and history navigation avoids extra pushes", () => {
+  const { run, sandbox } = board({}, "/3/");
+  assert.equal(run("currentRoom"), "3");
+  assert.deepEqual(Array.from(run('["/1","/2/","/3","/4","/api/board","/13"].map(roomFromPath)')),
+    ["1", "2", "3", null, null, null]);
+  const paths = [];
+  sandbox.window.history = { pushState: (_state, _unused, url) => paths.push(url) };
+  run("stopDrawing = () => {}; loadBoard = () => {}; clearFallingDust = () => {}; updateRoomSelection = () => {}; switchRoom('2')");
+  assert.deepEqual(paths, ["/2"]);
+  run("switchRoom('1', false); switchRoom('9')");
+  assert.equal(run("currentRoom"), "1");
+  assert.deepEqual(paths, ["/2"]);
+});
+
+test("pointer movement restores chalk visibility even when pointerenter was missed", () => {
+  const { run, cursor } = board();
+  const classes = new Set();
+  cursor.classList.add = (name) => classes.add(name);
+  cursor.classList.remove = (name) => classes.delete(name);
+  run("draw({clientX:100,clientY:200})");
+  assert.equal(classes.has("is-visible"), true);
+  assert.ok(cursor.style.transform.includes("translate3d(92.5px, 200px"));
+  run("hideChalkCursor()");
+  assert.equal(classes.has("is-visible"), false);
 });

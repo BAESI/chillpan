@@ -65,7 +65,7 @@ const language = navigator.language.toLowerCase().startsWith("ko") ? "ko" : "en"
 let noticeKey = "welcome";
 
 let dayKey = getDayKey();
-let currentRoom = localStorage.getItem(`${STORAGE_PREFIX}:room`) || "1";
+let currentRoom = roomFromPath() || localStorage.getItem(`${STORAGE_PREFIX}:room`) || "1";
 if (!["1", "2", "3"].includes(currentRoom)) currentRoom = "1";
 let stateKey = `${STORAGE_PREFIX}:state:${dayKey}`;
 let width = 0;
@@ -116,6 +116,8 @@ init();
 
 function init() {
   applyLanguage();
+  syncRoomUrl(false);
+  window.addEventListener("popstate", () => switchRoom(roomFromPath() || "1", false));
   newChalkButton.addEventListener("click", pickNewChalk);
   roomSelect.addEventListener("change", () => switchRoom(roomSelect.value));
   soundToggle.checked = soundEnabled;
@@ -160,11 +162,24 @@ function getDayKey(date = new Date()) {
   }).format(date);
 }
 
-function switchRoom(room) {
+function roomFromPath(pathname = window.location?.pathname || "/") {
+  return /^\/([123])\/?$/.exec(pathname)?.[1] || null;
+}
+
+function syncRoomUrl(push) {
+  const { pathname, search, hash } = window.location;
+  if (pathname !== `/${currentRoom}`) {
+    window.history[push ? "pushState" : "replaceState"](null, "", `/${currentRoom}${search}${hash}`);
+  }
+}
+
+function switchRoom(room, updateUrl = true) {
+  if (!["1", "2", "3"].includes(room)) return;
   if (room === currentRoom) return;
   stopDrawing();
   currentRoom = room;
   localStorage.setItem(`${STORAGE_PREFIX}:room`, currentRoom);
+  if (updateUrl) syncRoomUrl(true);
   loadBoard();
   clearFallingDust();
   updateRoomSelection();
@@ -499,7 +514,7 @@ async function flushStrokes() {
 function startDrawing(event) {
   const bounds = canvas.getBoundingClientRect();
   boardBounds = { left: bounds.left, top: bounds.top };
-  moveChalkCursor(event);
+  showChalkCursor(event);
   if (loadingBoard || drawing) return;
   if (chalkRemaining <= 0) {
     showNotice(chalkKind === "eraser" ? "eraserGone" : "gone");
@@ -519,7 +534,7 @@ function startDrawing(event) {
 }
 
 function draw(event) {
-  moveChalkCursor(event);
+  showChalkCursor(event);
   if (!drawing || event.pointerId !== activePointerId || !lastPoint || chalkRemaining <= 0) return;
   let point = getPoint(event);
   let distance = Math.hypot(point.x - lastPoint.x, point.y - lastPoint.y);

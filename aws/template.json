@@ -77,6 +77,14 @@
         "FunctionCode": "function handler(event) { var request = event.request; request.headers['x-chillpan-host'] = {value: request.headers.host.value}; return request; }"
       }
     },
+    "RoomRoutes": {
+      "Type": "AWS::CloudFront::Function",
+      "Properties": {
+        "Name": { "Fn::Sub": "${AWS::StackName}-room-routes" }, "AutoPublish": true,
+        "FunctionConfig": { "Comment": "Serve classroom share links from the static app", "Runtime": "cloudfront-js-2.0" },
+        "FunctionCode": "function handler(event) { var request = event.request; if (/^\\/[123]\\/?$/.test(request.uri)) request.uri = '/index.html'; return request; }"
+      }
+    },
     "ApiForwarding": {
       "Type": "AWS::CloudFront::OriginRequestPolicy",
       "Properties": { "OriginRequestPolicyConfig": {
@@ -98,7 +106,7 @@
           { "Id": "web", "DomainName": { "Fn::GetAtt": ["WebBucket", "RegionalDomainName"] }, "OriginAccessControlId": { "Ref": "WebOAC" }, "S3OriginConfig": { "OriginAccessIdentity": "" } },
           { "Id": "api", "DomainName": { "Fn::Select": [2, { "Fn::Split": ["/", { "Fn::GetAtt": ["BoardUrl", "FunctionUrl"] }] }] }, "OriginAccessControlId": { "Ref": "ApiOAC" }, "CustomOriginConfig": { "OriginProtocolPolicy": "https-only", "HTTPSPort": 443, "OriginSSLProtocols": ["TLSv1.2"] } }
         ],
-        "DefaultCacheBehavior": { "TargetOriginId": "web", "ViewerProtocolPolicy": "redirect-to-https", "Compress": true, "AllowedMethods": ["GET", "HEAD", "OPTIONS"], "CachedMethods": ["GET", "HEAD"], "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6" },
+        "DefaultCacheBehavior": { "TargetOriginId": "web", "ViewerProtocolPolicy": "redirect-to-https", "Compress": true, "AllowedMethods": ["GET", "HEAD", "OPTIONS"], "CachedMethods": ["GET", "HEAD"], "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6", "FunctionAssociations": [{ "EventType": "viewer-request", "FunctionARN": { "Fn::GetAtt": ["RoomRoutes", "FunctionARN"] } }] },
         "CacheBehaviors": [{ "PathPattern": "/api/*", "TargetOriginId": "api", "ViewerProtocolPolicy": "https-only", "Compress": true,
           "AllowedMethods": ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"], "CachedMethods": ["GET", "HEAD"],
           "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad", "OriginRequestPolicyId": { "Ref": "ApiForwarding" },
