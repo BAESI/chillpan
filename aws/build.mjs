@@ -12,9 +12,10 @@ await mkdir(path.join(out, "web"), { recursive: true });
 await build({ entryPoints: [path.join(root, "app/page.tsx")], outfile: path.join(out, "page.mjs"),
   bundle: true, platform: "node", format: "esm", packages: "external", jsx: "automatic" });
 const { default: Page } = await import(pathToFileURL(path.join(out, "page.mjs")));
-const publisher = process.env.ADSENSE_CLIENT || "";
+const adsense = JSON.parse(await readFile(path.join(root, "aws/adsense.json"), "utf8"));
+const publisher = process.env.ADSENSE_CLIENT ?? adsense.publisher;
 if (publisher && !/^ca-pub-\d{16}$/.test(publisher)) throw new Error("Invalid AdSense publisher ID");
-const verification = publisher ? `<meta name="google-adsense-account" content="${publisher}">` : "";
+const verification = publisher ? `<meta name="google-adsense-account" content="${publisher}"><script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${publisher}" crossorigin="anonymous"></script>` : "";
 const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Chillpan</title><meta name="description" content="A shared daily chalkboard."><link rel="icon" href="/favicon.svg"><link rel="stylesheet" href="/chillpan/styles.css">${verification}</head><body data-sync-ms="3000" data-stroke-ms="600">${renderToStaticMarkup(createElement(Page))}<script type="module" src="/chillpan/app.js"></script></body></html>`;
 await writeFile(path.join(out, "web/index.html"), html);
 await cp(path.join(root, "public/chillpan"), path.join(out, "web/chillpan"), { recursive: true });

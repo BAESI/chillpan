@@ -79,15 +79,15 @@ Erase actions use the optional `tool: "eraser"` stroke field and are persisted w
 
 ## AdSense Setup
 
-Advertising is disabled. No fake publisher ID, tracking script, or ad placement is shipped.
+The public AWS build includes the supplied AdSense publisher ID from `aws/adsense.json`, the asynchronous AdSense script in `<head>`, a verification meta tag, and root-level `ads.txt`. The publisher ID is public, not a credential. No manual ad placements are added. The owner-private Sites preview does not load AdSense.
 
-Once an AdSense account exists, build/deploy with the real publisher ID:
+Normal deployments retain the configured publisher automatically. To override it for a build/deploy:
 
 ```sh
 ADSENSE_CLIENT=ca-pub-YOUR_16_DIGIT_ID node aws/deploy.mjs --profile chillpan-personal --account YOUR_12_DIGIT_ACCOUNT_ID --deploy
 ```
 
-This adds only the `google-adsense-account` verification meta tag and `ads.txt`. It does NOT activate advertisements. Keep the environment variable set on subsequent deployments; generated files are ignored by Git.
+Set `ADSENSE_CLIENT=""` to omit all AdSense tags and `ads.txt` from a build. Auto ads are controlled in the AdSense dashboard and may display after approval if enabled; keep them off during review and until consent/moderation and placement have been checked. After deployment, verify `https://chillpan.day/ads.txt`, then verify ownership and request review in AdSense. Generated build files are ignored by Git.
 
 Before activation: publish accurate privacy/contact information, implement applicable consent requirements, provide reporting and moderation for user-generated drawings, and obtain AdSense approval. Unmoderated live drawings can contain policy violations; approval/revenue is not guaranteed. Ad placement must not overlap the drawing surface or encourage accidental clicks.
 
