@@ -1,14 +1,10 @@
 const canvas = document.querySelector("#chalkboard");
 const ctx = canvas.getContext("2d", { alpha: true });
-const chalkPercent = document.querySelector("#chalkPercent");
-const resetClock = document.querySelector("#resetClock");
-const chalkStickFill = document.querySelector("#chalkStickFill");
 const chalkCursor = document.querySelector("#chalkCursor");
 const notice = document.querySelector("#notice");
-const saveButton = document.querySelector("#saveButton");
-const tools = [...document.querySelectorAll(".tool")];
 
 const CHALK_BUDGET = 8800;
+const CHALK_SIZE = 5;
 const STORAGE_PREFIX = "chillpan";
 const COLORS = ["#eeeadd", "#dbe8d2", "#f0d1d4", "#ccdced", "#eadfb8"];
 
@@ -20,7 +16,6 @@ let height = 0;
 let pixelRatio = 1;
 let drawing = false;
 let lastPoint = null;
-let chalkSize = 5;
 let chalkRemaining = CHALK_BUDGET;
 let color = COLORS[Math.floor(Math.random() * COLORS.length)];
 let lastSavedAt = 0;
@@ -29,10 +24,11 @@ init();
 
 function init() {
   loadState();
+  saveState();
   resizeCanvas();
   drawOpeningDust();
   loadBoard();
-  updateMeters();
+  updateChalkCursor();
   window.addEventListener("resize", resizeCanvas);
   window.addEventListener("storage", handleStorageSync);
   canvas.addEventListener("pointerdown", startDrawing);
@@ -41,8 +37,6 @@ function init() {
   canvas.addEventListener("pointercancel", stopDrawing);
   canvas.addEventListener("pointerenter", showChalkCursor);
   canvas.addEventListener("pointerleave", hideChalkCursor);
-  saveButton.addEventListener("click", downloadBoard);
-  tools.forEach((tool) => tool.addEventListener("click", chooseTool));
   setInterval(tick, 1000);
   requestAnimationFrame(softenNotice);
 }
@@ -54,16 +48,10 @@ function getDayKey(date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
-function midnight() {
-  const next = new Date();
-  next.setHours(24, 0, 0, 0);
-  return next;
-}
-
 function loadState() {
   const saved = JSON.parse(localStorage.getItem(stateKey) || "{}");
   chalkRemaining = Number.isFinite(saved.chalkRemaining) ? saved.chalkRemaining : CHALK_BUDGET;
-  color = saved.color || color;
+  color = COLORS.includes(saved.color) ? saved.color : color;
 }
 
 function saveState() {
@@ -136,7 +124,7 @@ function startDrawing(event) {
   canvas.setPointerCapture(event.pointerId);
   drawing = true;
   lastPoint = getPoint(event);
-  placeChalkDust(lastPoint.x, lastPoint.y, chalkSize * 0.7);
+  placeChalkDust(lastPoint.x, lastPoint.y, CHALK_SIZE * 0.7);
 }
 
 function draw(event) {
@@ -146,11 +134,11 @@ function draw(event) {
   const distance = Math.hypot(point.x - lastPoint.x, point.y - lastPoint.y);
   if (distance < 0.4) return;
 
-  const spend = Math.max(distance * (chalkSize / 7), 0.7);
+  const spend = Math.max(distance * (CHALK_SIZE / 7), 0.7);
   chalkRemaining = Math.max(0, chalkRemaining - spend);
-  drawChalkLine(lastPoint, point, chalkSize);
+  drawChalkLine(lastPoint, point, CHALK_SIZE);
   lastPoint = point;
-  updateMeters();
+  updateChalkCursor();
   saveState();
   persistBoard();
 
@@ -209,31 +197,16 @@ function placeChalkDust(x, y, radius) {
   ctx.restore();
 }
 
-function chooseTool(event) {
-  const selected = event.currentTarget;
-  chalkSize = Number(selected.dataset.size);
-  tools.forEach((tool) => tool.classList.toggle("is-active", tool === selected));
-}
-
-function updateMeters() {
-  const percent = Math.max(0, Math.round((chalkRemaining / CHALK_BUDGET) * 100));
-  const cursorScale = Math.max(0.14, chalkRemaining / CHALK_BUDGET);
-  chalkPercent.textContent = `${percent}%`;
-  chalkStickFill.style.transform = `scaleX(${chalkRemaining / CHALK_BUDGET})`;
-  chalkCursor.style.height = `${20 + 74 * cursorScale}px`;
+function updateChalkCursor() {
+  const cursorScale = Math.max(0, Math.min(1, chalkRemaining / CHALK_BUDGET));
+  document.documentElement.style.setProperty("--chalk", color);
+  chalkCursor.style.height = `${13 + 81 * cursorScale}px`;
   chalkCursor.classList.toggle("is-spent", chalkRemaining <= 0);
 }
 
 function tick() {
   const currentDay = getDayKey();
   if (currentDay !== dayKey) resetForNewDay(currentDay);
-  const remaining = Math.max(0, midnight() - new Date());
-  const hours = Math.floor(remaining / 3_600_000);
-  const minutes = Math.floor((remaining % 3_600_000) / 60_000);
-  const seconds = Math.floor((remaining % 60_000) / 1000);
-  resetClock.textContent = [hours, minutes, seconds]
-    .map((unit) => String(unit).padStart(2, "0"))
-    .join(":");
 }
 
 function resetForNewDay(nextDayKey) {
@@ -245,15 +218,8 @@ function resetForNewDay(nextDayKey) {
   ctx.clearRect(0, 0, width, height);
   drawOpeningDust();
   saveState();
-  updateMeters();
+  updateChalkCursor();
   showNotice("a new board opened at midnight.");
-}
-
-function downloadBoard() {
-  const link = document.createElement("a");
-  link.download = `chillpan-${dayKey}.png`;
-  link.href = canvas.toDataURL("image/png");
-  link.click();
 }
 
 function showNotice(message) {
@@ -277,5 +243,5 @@ function hideChalkCursor() {
 }
 
 function moveChalkCursor(event) {
-  chalkCursor.style.transform = `translate3d(${event.clientX - 9}px, ${event.clientY - 88}px, 0) rotate(14deg)`;
+  chalkCursor.style.transform = `translate3d(${event.clientX - 7.5}px, ${event.clientY}px, 0) rotate(-45deg)`;
 }
