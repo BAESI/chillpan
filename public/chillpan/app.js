@@ -73,8 +73,6 @@ let height = 0;
 let pixelRatio = 1;
 let boardBounds = { left: 0, top: 0 };
 let replayFrame = 0;
-let replayRevision = 0;
-let localPaintVersion = 0;
 let drawing = false;
 let activePointerId = null;
 let loadingBoard = false;
@@ -111,10 +109,25 @@ let soundEnabled = localStorage.getItem(`${STORAGE_PREFIX}:sound`) !== "off";
 let chalkAudio = null;
 let soundStopTimer = 0;
 let discoveryNotes = [];
+let confirmedSurface = null;
+let confirmedContext = null;
+let renderedCount = 0;
+let polling = false;
+let pollAgain = false;
+let liveSocket = null;
+let liveRetry = 0;
+let liveAttempt = 0;
+let liveHeartbeat = 0;
+let strokeTimer = 0;
+let outbox = null;
+let persistence = Promise.resolve();
+let inputFrame = 0;
+let pendingPointer = null;
+let eraserPatch = null;
 
 init();
 
-function init() {
+async function init() {
   applyLanguage();
   syncRoomUrl(false);
   window.addEventListener("popstate", () => switchRoom(roomFromPath() || "1", false));
@@ -130,13 +143,14 @@ function init() {
   loadState();
   saveState();
   resizeCanvas();
+  await restoreOutbox();
   loadBoard();
   updateRoomSelection();
   updateChalkCursor();
   window.addEventListener("resize", resizeCanvas);
-  window.addEventListener("online", () => { flushStrokes(); });
+  window.addEventListener("online", () => { flushStrokes(); connectLive(); requestBoardSync(); });
   canvas.addEventListener("pointerdown", startDrawing);
-  canvas.addEventListener("pointermove", draw);
+  canvas.addEventListener("pointermove", schedulePointer);
   canvas.addEventListener("pointerup", stopDrawing);
   canvas.addEventListener("pointercancel", stopDrawing);
   canvas.addEventListener("lostpointercapture", stopDrawing);
@@ -149,8 +163,9 @@ function init() {
       stopDrawing();
       stopDiscoverySound();
       clearFallingDust();
-    }
+    } else { connectLive(); requestBoardSync(); }
   });
+  window.addEventListener("pageshow", () => { connectLive(); requestBoardSync(); });
   setInterval(tick, 1000);
   flushStrokes();
   requestAnimationFrame(softenNotice);
@@ -251,28 +266,48 @@ function drawOpeningDust(context = ctx) {
 
 function loadBoard() {
   cancelAnimationFrame(replayFrame);
-  replayRevision += 1;
+  replayFrame = 0;
   for (const [id, stroke] of optimisticStrokes) {
     if (stroke.day !== dayKey) optimisticStrokes.delete(id);
   }
   const generation = ++boardLoadId;
+  polling = false;
+  pollAgain = false;
   clearTimeout(pollTimer);
   boardCursor = 0;
   sharedStrokes = [];
   boardNeedsReplay = false;
   sharedStrokeIds.clear();
+  renderedCount = 0;
+  confirmedSurface = document.createElement("canvas");
+  confirmedSurface.width = canvas.width;
+  confirmedSurface.height = canvas.height;
+  confirmedContext = confirmedSurface.getContext("2d");
+  confirmedContext.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+  confirmedContext.lineCap = "round";
+  confirmedContext.lineJoin = "round";
+  drawOpeningDust(confirmedContext);
   seenStrokes.clear();
   pendingStrokes.forEach((stroke) => seenStrokes.add(stroke.strokeId));
   loadingBoard = true;
   canvas.setAttribute("aria-busy", "true");
   ctx.clearRect(0, 0, width, height);
-  drawOpeningDust();
+  ctx.drawImage(confirmedSurface, 0, 0, width, height);
   pendingStrokes.filter((stroke) => stroke.day === dayKey && String(stroke.room) === currentRoom).forEach(drawSharedStroke);
   pollBoard(generation);
+  connectLive(true);
+}
+
+function requestBoardSync() {
+  clearTimeout(pollTimer);
+  if (polling) { pollAgain = true; return; }
+  pollBoard(boardLoadId);
 }
 
 async function pollBoard(generation) {
-  let delay = document.hidden ? Math.max(4000, SYNC_INTERVAL * 10) : SYNC_INTERVAL;
+  if (polling) { pollAgain = true; return; }
+  polling = true;
+  let delay = document.hidden || liveSocket?.readyState === 1 ? 30000 : SYNC_INTERVAL;
   try {
     const response = await fetch(`/api/board?room=${currentRoom}&after=${boardCursor}`, { cache: "no-store" });
     if (!response.ok) throw new Error("Board unavailable");
@@ -282,24 +317,15 @@ async function pollBoard(generation) {
       resetForNewDay(data.day);
       return;
     }
-    // Append only when the visible canvas is already in server order.
-    const canAppend = !loadingBoard && !boardNeedsReplay && !drawing && !currentStroke &&
-      !pendingStrokes.length && seenStrokes.size === sharedStrokeIds.size &&
-      data.strokes.length <= 8 && !data.strokes.some((stroke) => stroke.tool === "eraser");
     data.strokes.forEach((stroke) => {
       if (!sharedStrokeIds.has(stroke.strokeId)) {
         sharedStrokes.push(stroke);
         sharedStrokeIds.add(stroke.strokeId);
-        if (canAppend) drawSharedStroke(stroke);
-        else boardNeedsReplay = true;
+        boardNeedsReplay = true;
       }
       seenStrokes.add(stroke.strokeId);
-      optimisticStrokes.delete(stroke.strokeId);
     });
-    if (!data.hasMore && (loadingBoard || boardNeedsReplay)) {
-      if (drawing) boardNeedsReplay = true;
-      else renderBoardView();
-    }
+    if (boardNeedsReplay) renderBoardView();
     boardCursor = data.cursor;
     if (!data.hasMore) {
       loadingBoard = false;
@@ -313,7 +339,45 @@ async function pollBoard(generation) {
     if (!syncFailed) showNotice("syncError");
     syncFailed = true;
   }
-  if (generation === boardLoadId) pollTimer = setTimeout(() => pollBoard(generation), delay);
+  if (generation === boardLoadId) {
+    polling = false;
+    if (pollAgain) { pollAgain = false; delay = 0; }
+    pollTimer = setTimeout(() => pollBoard(generation), delay);
+  }
+}
+
+function connectLive(force = false) {
+  const url = document.body?.dataset?.liveUrl;
+  if (!url || typeof WebSocket === "undefined") return;
+  if (!force && liveSocket && liveSocket.readyState < 2) return;
+  clearTimeout(liveRetry);
+  clearInterval(liveHeartbeat);
+  if (liveSocket) { liveSocket.onclose = null; liveSocket.close(); }
+  const room = currentRoom;
+  const socket = new WebSocket(`${url}?room=${room}`);
+  liveSocket = socket;
+  socket.onopen = () => {
+    if (socket !== liveSocket) return;
+    liveAttempt = 0;
+    requestBoardSync();
+    liveHeartbeat = setInterval(() => { if (socket.readyState === 1) socket.send('{"action":"ping"}'); }, 60000);
+  };
+  socket.onmessage = (event) => {
+    if (socket !== liveSocket || room !== currentRoom) return;
+    try {
+      const update = JSON.parse(event.data);
+      if (update.type === "board" && String(update.room) === room &&
+          (update.day !== dayKey || update.cursor > boardCursor)) requestBoardSync();
+    } catch {}
+  };
+  socket.onclose = () => {
+    if (socket !== liveSocket) return;
+    clearInterval(liveHeartbeat);
+    liveSocket = null;
+    requestBoardSync();
+    liveRetry = setTimeout(connectLive, Math.min(30000, 1000 * 2 ** Math.min(liveAttempt++, 5)) + Math.random() * 500);
+  };
+  socket.onerror = () => socket.close();
 }
 
 function drawSharedStroke(stroke) {
@@ -346,61 +410,81 @@ function drawStrokeOn(stroke, context, surface) {
   ctx.restore();
 }
 
-function* boardReplaySteps(strokes, context, surface) {
-  drawOpeningDust(context);
-  for (const stroke of strokes) {
-    if (stroke.tool !== "eraser") {
-      drawStrokeOn(stroke, context, surface);
-      yield;
-      continue;
-    }
-    for (let i = 0; i < Math.max(1, stroke.points.length - 1); i += 1) {
-      const [x, y] = stroke.points[i];
-      const [nextX, nextY] = stroke.points[i + 1] || stroke.points[i];
-      eraseChalk({ x: x * width, y: y * height }, { x: nextX * width, y: nextY * height }, context, surface);
-      yield;
-    }
-  }
-}
-
 function renderBoardView() {
   boardNeedsReplay = true;
-  cancelAnimationFrame(replayFrame);
-  const revision = ++replayRevision;
+  if (replayFrame) return;
   const generation = boardLoadId;
-  const paintVersion = localPaintVersion;
-  const sharedCount = sharedStrokes.length;
-  const surface = document.createElement("canvas");
-  surface.width = canvas.width;
-  surface.height = canvas.height;
-  const context = surface.getContext("2d");
-  context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-  context.lineCap = "round";
-  context.lineJoin = "round";
-  const local = [...optimisticStrokes.values()].filter((stroke) =>
-    stroke.day === dayKey && String(stroke.room) === currentRoom && !sharedStrokeIds.has(stroke.strokeId));
-  const steps = boardReplaySteps([...sharedStrokes, ...local], context, surface);
-  // Build out of view in short slices, then swap once. Never block pointer-up with history replay.
+  let steps = null;
+  let active = null;
+  // Advance the confirmed layer once, even during input. Never restart accumulated history.
   function pump() {
-    if (revision !== replayRevision || generation !== boardLoadId) return;
-    if (drawing) { replayFrame = requestAnimationFrame(pump); return; }
-    if (paintVersion !== localPaintVersion || sharedCount !== sharedStrokes.length) {
-      renderBoardView();
-      return;
-    }
+    if (generation !== boardLoadId) return;
     const start = performance.now();
+    let dirty = null;
     for (let count = 0; count < 64 && performance.now() - start < 4; count += 1) {
-      if (steps.next().done) {
-        ctx.clearRect(0, 0, width, height);
-        ctx.drawImage(surface, 0, 0, canvas.width, canvas.height, 0, 0, width, height);
+      if (!active && renderedCount < sharedStrokes.length) {
+        active = sharedStrokes[renderedCount];
+        steps = strokeSteps(active);
+      }
+      if (!active) {
+        if (dirty) compositeRegion(dirty);
         boardNeedsReplay = false;
         replayFrame = 0;
         return;
       }
+      if (steps.next().done) {
+        renderedCount++;
+        optimisticStrokes.delete(active.strokeId);
+        const bounds = strokeBounds(active);
+        dirty = dirty ? { left: Math.min(dirty.left, bounds.left), top: Math.min(dirty.top, bounds.top),
+          right: Math.max(dirty.right, bounds.right), bottom: Math.max(dirty.bottom, bounds.bottom) } : bounds;
+        active = null;
+      }
     }
+    if (dirty) compositeRegion(dirty);
     replayFrame = requestAnimationFrame(pump);
   }
   replayFrame = requestAnimationFrame(pump);
+}
+
+function* strokeSteps(stroke) {
+  if (stroke.tool !== "eraser") {
+    drawStrokeOn(stroke, confirmedContext, confirmedSurface);
+    return;
+  }
+  for (let i = 0; i < Math.max(1, stroke.points.length - 1); i++) {
+    const [x, y] = stroke.points[i];
+    const [nx, ny] = stroke.points[i + 1] || stroke.points[i];
+    eraseChalk({x:x * width,y:y * height}, {x:nx * width,y:ny * height}, confirmedContext, confirmedSurface);
+    yield;
+  }
+}
+
+function strokeBounds(stroke) {
+  let left = width, top = height, right = 0, bottom = 0;
+  for (const [x, y] of stroke.points) {
+    left = Math.min(left, x * width); right = Math.max(right, x * width);
+    top = Math.min(top, y * height); bottom = Math.max(bottom, y * height);
+  }
+  const pad = stroke.tool === "eraser" ? ERASER_SIZE + 8 : CHALK_SIZE + 2;
+  return { left: Math.max(0, Math.floor(left - pad)), top: Math.max(0, Math.floor(top - pad)),
+    right: Math.min(width, Math.ceil(right + pad)), bottom: Math.min(height, Math.ceil(bottom + pad)) };
+}
+
+function compositeRegion(rect) {
+  const {left, top, right, bottom} = rect;
+  if (right <= left || bottom <= top) return;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(left, top, right - left, bottom - top); ctx.clip();
+  ctx.clearRect(left, top, right - left, bottom - top);
+  ctx.drawImage(confirmedSurface, left * pixelRatio, top * pixelRatio, (right - left) * pixelRatio,
+    (bottom - top) * pixelRatio, left, top, right - left, bottom - top);
+  for (const stroke of [...optimisticStrokes.values(), ...(currentStroke ? [currentStroke] : [])]) {
+    if (stroke.day !== dayKey || String(stroke.room) !== currentRoom) continue;
+    const bounds = strokeBounds(stroke);
+    if (bounds.right >= left && bounds.left <= right && bounds.bottom >= top && bounds.top <= bottom) drawSharedStroke(stroke);
+  }
+  ctx.restore();
 }
 
 function eraseChalk(from, to, context = ctx, surface = canvas) {
@@ -422,7 +506,14 @@ function eraseChalk(from, to, context = ctx, surface = canvas) {
   const right = Math.min(canvas.width, Math.ceil((Math.max(from.x, to.x) + padding + 4) * pixelRatio));
   const bottom = Math.min(canvas.height, Math.ceil((Math.max(from.y, to.y) + padding + 4) * pixelRatio));
   if (right > left && bottom > top) {
-    ctx.drawImage(canvas, left, top, right - left, bottom - top,
+    if (!eraserPatch) eraserPatch = document.createElement("canvas");
+    const patchWidth = right - left, patchHeight = bottom - top;
+    if (eraserPatch.width !== patchWidth) eraserPatch.width = patchWidth;
+    if (eraserPatch.height !== patchHeight) eraserPatch.height = patchHeight;
+    const patchContext = eraserPatch.getContext("2d");
+    patchContext.clearRect(0, 0, patchWidth, patchHeight);
+    patchContext.drawImage(canvas, left, top, patchWidth, patchHeight, 0, 0, patchWidth, patchHeight);
+    ctx.drawImage(eraserPatch, 0, 0, patchWidth, patchHeight,
       left / pixelRatio, top / pixelRatio, (right - left) / pixelRatio, (bottom - top) / pixelRatio);
   }
   ctx.globalCompositeOperation = "destination-out";
@@ -447,7 +538,6 @@ function normalizedPoint(point) {
 }
 
 function beginStroke(point, continuation = false) {
-  localPaintVersion += 1;
   strokeContinuation = continuation;
   strokeStartedAt = performance.now();
   currentStroke = {
@@ -455,6 +545,10 @@ function beginStroke(point, continuation = false) {
     size: CHALK_SIZE / width, points: [normalizedPoint(point)],
     ...(chalkKind === "eraser" ? { tool: "eraser" } : {}),
   };
+  clearTimeout(strokeTimer);
+  strokeTimer = setTimeout(() => {
+    if (drawing && currentStroke?.points.length > 1) queueStroke(true);
+  }, STROKE_INTERVAL);
 }
 
 function queueStroke(continueDrawing = false) {
@@ -468,12 +562,57 @@ function queueStroke(continueDrawing = false) {
     if (chalkKind === "rainbow") color = COLORS[(COLORS.indexOf(color) + 1) % COLORS.length];
     beginStroke(lastPoint, true);
   }
-  savePendingStrokes();
+  savePendingStrokes().catch(() => showNotice("syncError"));
   flushStrokes();
 }
 
-function savePendingStrokes() {
-  sessionStorage.setItem(`${STORAGE_PREFIX}:pending`, JSON.stringify(pendingStrokes));
+function outboxTransaction(strokes, removed = []) {
+  if (!outbox) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const transaction = outbox.transaction("strokes", "readwrite");
+    const store = transaction.objectStore("strokes");
+    strokes.forEach((stroke) => store.put(stroke));
+    removed.forEach((id) => store.delete(id));
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error || new Error("Outbox aborted"));
+  });
+}
+
+async function restoreOutbox() {
+  if (typeof indexedDB === "undefined") return;
+  try {
+    outbox = await new Promise((resolve, reject) => {
+      const request = indexedDB.open("chillpan-outbox", 1);
+      request.onupgradeneeded = () => request.result.createObjectStore("strokes", { keyPath: "strokeId" });
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+      request.onblocked = () => reject(new Error("Outbox blocked"));
+    });
+    const stored = await new Promise((resolve, reject) => {
+      const request = outbox.transaction("strokes").objectStore("strokes").getAll();
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    pendingStrokes = [...new Map([...stored, ...pendingStrokes].filter((stroke) => stroke.day === dayKey)
+      .map((stroke) => [stroke.strokeId, stroke])).values()];
+    pendingStrokes.forEach((stroke) => optimisticStrokes.set(stroke.strokeId, stroke));
+    await outboxTransaction(pendingStrokes, stored.filter((stroke) => stroke.day !== dayKey).map((stroke) => stroke.strokeId));
+    sessionStorage.removeItem(`${STORAGE_PREFIX}:pending`);
+  } catch {
+    outbox = null;
+    showNotice("syncError");
+  }
+}
+
+function savePendingStrokes(removed = []) {
+  if (!outbox) {
+    try { sessionStorage.setItem(`${STORAGE_PREFIX}:pending`, JSON.stringify(pendingStrokes)); } catch {}
+    return Promise.resolve();
+  }
+  const snapshot = pendingStrokes.slice();
+  persistence = persistence.catch(() => {}).then(() => outboxTransaction(snapshot, removed));
+  return persistence;
 }
 
 async function flushStrokes() {
@@ -485,6 +624,7 @@ async function flushStrokes() {
   const batch = pendingStrokes.slice(0, 32);
   let retry = false;
   try {
+    await persistence;
     const body = JSON.stringify({ strokes: batch });
     const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body));
     const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -500,7 +640,8 @@ async function flushStrokes() {
       const saved = new Set(batch.map((stroke) => stroke.strokeId));
       pendingStrokes = pendingStrokes.filter((stroke) => !saved.has(stroke.strokeId));
     }
-    savePendingStrokes();
+    await savePendingStrokes(response.ok ? batch.map((stroke) => stroke.strokeId) : []);
+    requestBoardSync();
   } catch {
     retry = true;
     if (!syncFailed) showNotice("syncError");
@@ -531,6 +672,16 @@ function startDrawing(event) {
     emitFallingDust(lastPoint, lastPoint, 4);
     placeChalkDust(lastPoint.x, lastPoint.y, CHALK_SIZE * 0.7);
   }
+}
+
+function schedulePointer(event) {
+  pendingPointer = { clientX: event.clientX, clientY: event.clientY, pointerId: event.pointerId };
+  if (!inputFrame) inputFrame = requestAnimationFrame(() => {
+    inputFrame = 0;
+    const point = pendingPointer;
+    pendingPointer = null;
+    if (point) draw(point);
+  });
 }
 
 function draw(event) {
@@ -569,6 +720,12 @@ function draw(event) {
 }
 
 function stopDrawing() {
+  cancelAnimationFrame(inputFrame);
+  inputFrame = 0;
+  const point = pendingPointer;
+  pendingPointer = null;
+  if (point && drawing && chalkRemaining > 0) draw(point);
+  clearTimeout(strokeTimer);
   stopChalkSound();
   saveState();
   if (!drawing) return;

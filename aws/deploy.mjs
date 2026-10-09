@@ -29,6 +29,7 @@ if (!values.deploy) {
   console.log(aws(["cloudformation", "deploy", "--stack-name", values.stack, "--template-file", ".aws-build/template.json", "--capabilities", "CAPABILITY_IAM", "--no-fail-on-empty-changeset", ...parameters, "--tags", "Project=Chillpan"]));
   const result = aws(["cloudformation", "describe-stacks", "--stack-name", values.stack], true);
   const outputs = Object.fromEntries(result.Stacks[0].Outputs.map(({ OutputKey, OutputValue }) => [OutputKey, OutputValue]));
+  execFileSync(process.execPath, ["aws/build.mjs"], { cwd: root, stdio: "inherit", env: { ...process.env, CHILLPAN_LIVE_URL: outputs.LiveUrl } });
   console.log(aws(["s3", "sync", ".aws-build/web", `s3://${outputs.Bucket}`, "--cache-control", "public,max-age=60", "--only-show-errors"]));
   console.log(aws(["s3", "cp", ".aws-build/web/index.html", `s3://${outputs.Bucket}/index.html`, "--content-type", "text/html; charset=utf-8", "--cache-control", "no-cache", "--only-show-errors"]));
   console.log(aws(["cloudfront", "create-invalidation", "--distribution-id", outputs.DistributionId, "--paths", "/*"]));

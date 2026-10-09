@@ -4,6 +4,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { pathToFileURL } from "node:url";
 import path from "node:path";
+import { createHash } from "node:crypto";
 
 const root = path.resolve(import.meta.dirname, "..");
 const out = path.join(root, ".aws-build");
@@ -16,12 +17,16 @@ const adsense = JSON.parse(await readFile(path.join(root, "aws/adsense.json"), "
 const publisher = process.env.ADSENSE_CLIENT ?? adsense.publisher;
 if (publisher && !/^ca-pub-\d{16}$/.test(publisher)) throw new Error("Invalid AdSense publisher ID");
 const verification = publisher ? `<meta name="google-adsense-account" content="${publisher}"><script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${publisher}" crossorigin="anonymous"></script>` : "";
-const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Chillpan</title><meta name="description" content="A shared daily chalkboard."><link rel="icon" href="/favicon.svg"><link rel="stylesheet" href="/chillpan/styles.css">${verification}</head><body data-sync-ms="3000" data-stroke-ms="600">${renderToStaticMarkup(createElement(Page))}<script type="module" src="/chillpan/app.js"></script></body></html>`;
+const liveUrl = process.env.CHILLPAN_LIVE_URL || "";
+if (liveUrl && !/^wss:\/\/[a-z0-9]+\.execute-api\.ap-northeast-2\.amazonaws\.com\/live$/.test(liveUrl)) throw new Error("Invalid live URL");
+const version = createHash("sha256").update(await readFile(path.join(root, "public/chillpan/app.js"))).digest("hex").slice(0, 12);
+const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Chillpan</title><meta name="description" content="A shared daily chalkboard."><link rel="icon" href="/favicon.svg"><link rel="stylesheet" href="/chillpan/styles.css">${verification}</head><body data-live-url="${liveUrl}" data-sync-ms="3000" data-stroke-ms="600">${renderToStaticMarkup(createElement(Page))}<script type="module" src="/chillpan/app.js?v=${version}"></script></body></html>`;
 await writeFile(path.join(out, "web/index.html"), html);
 await cp(path.join(root, "public/chillpan"), path.join(out, "web/chillpan"), { recursive: true });
 await cp(path.join(root, "public/favicon.svg"), path.join(out, "web/favicon.svg"));
 if (publisher) await writeFile(path.join(out, "web/ads.txt"), `google.com, ${publisher.slice(3)}, DIRECT, f08c47fec0942fa0\n`);
 const template = JSON.parse(await readFile(path.join(root, "aws/template.json"), "utf8"));
 template.Resources.BoardFunction.Properties.Code.ZipFile = await readFile(path.join(root, "aws/handler.cjs"), "utf8");
+template.Resources.LiveFunction.Properties.Code.ZipFile = await readFile(path.join(root, "aws/live.cjs"), "utf8");
 await writeFile(path.join(out, "template.json"), JSON.stringify(template, null, 2));
 console.log("AWS static assets and CloudFormation template built in .aws-build");

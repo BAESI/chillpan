@@ -14,6 +14,7 @@ function board(saved = {}, pathname = "/") {
     navigator: { language: "ko-KR" }, localStorage: storage,
     sessionStorage: { getItem: () => "[]", setItem() {} },
     window: { location: { pathname, search: "", hash: "" } }, performance: { now: () => 1000 }, crypto: { randomUUID: () => "stroke-id" },
+    setTimeout: () => 1, clearTimeout() {},
   });
   vm.runInContext(source.replace("\ninit();\n", "\n"), sandbox);
   return { sandbox, root, cursor, properties, run: (code) => vm.runInContext(code, sandbox) };
@@ -41,7 +42,7 @@ test("rainbow keeps each stored chunk monochrome and advances only at the existi
   run(`
     chalkKind = "rainbow"; color = COLORS[0]; width = 390; height = 700;
     lastPoint = { x: 20, y: 30 };
-    savePendingStrokes = () => {}; flushStrokes = () => {};
+    savePendingStrokes = () => Promise.resolve(); flushStrokes = () => {};
     beginStroke(lastPoint); queueStroke(true);
   `);
   assert.equal(run("pendingStrokes[0].color"), "#f28eaa");
@@ -97,7 +98,7 @@ test("remote eraser replays every segment instead of drawing colored ink", () =>
   assert.deepEqual(JSON.parse(JSON.stringify(sandbox.erased[0])), [{x:10,y:20},{x:30,y:20}]);
 });
 
-test("canonical replay orders shared strokes before pending edits and avoids duplicate erasing", () => {
+test("confirmed actions preserve ink/eraser order and yield between eraser segments", () => {
   const { run } = board();
   run(`var replay = []; ctx.clearRect = () => {}; drawOpeningDust = () => {};
     drawStrokeOn = stroke => replay.push(stroke.strokeId);
@@ -105,11 +106,11 @@ test("canonical replay orders shared strokes before pending edits and avoids dup
     sharedStrokes = [{strokeId:"ink"},{strokeId:"erase",tool:"eraser",points:[[.1,.1]]}];
     sharedStrokeIds.add("ink"); sharedStrokeIds.add("erase");
     pendingStrokes = [{strokeId:"erase",tool:"eraser",day:dayKey,room:1},{strokeId:"next",day:dayKey,room:1}];
-    currentRoom = "1"; for (const step of boardReplaySteps([...sharedStrokes, pendingStrokes[1]], ctx, canvas)) {}`);
-  assert.deepEqual(Array.from(run("replay")), ["ink", "erase", "next"]);
+    currentRoom = "1"; for (const stroke of sharedStrokes) for (const step of strokeSteps(stroke)) {}`);
+  assert.deepEqual(Array.from(run("replay")), ["ink", "erase"]);
 });
 
-test("polling appends only new actions and defers canonical replay during drawing", async () => {
+test("polling schedules incremental rendering even while drawing and deduplicates actions", async () => {
   const { run, sandbox } = board();
   sandbox.setTimeout = () => 1;
   run(`var replayCount = 0, painted = []; canvas.setAttribute = () => {};
@@ -119,19 +120,19 @@ test("polling appends only new actions and defers canonical replay during drawin
     var reply = {day:dayKey,strokes:[{strokeId:"new"}],cursor:2,hasMore:false};`);
   sandbox.fetch = async () => ({ ok: true, json: async () => run("reply") });
   await run("pollBoard(boardLoadId)");
-  assert.deepEqual(Array.from(run("painted")), ["new"]);
-  assert.equal(run("replayCount"), 0);
+  assert.equal(run("replayCount"), 1);
   run('drawing = true; reply.strokes = [{strokeId:"remote-eraser",tool:"eraser"}];');
   await run("pollBoard(boardLoadId)");
-  assert.equal(run("replayCount"), 0);
-  assert.equal(run("boardNeedsReplay"), true);
+  assert.equal(run("replayCount"), 2);
+  assert.equal(run("sharedStrokes.length"), 2);
   run("drawing = false; reply.strokes = [];");
   await run("pollBoard(boardLoadId)");
-  assert.equal(run("replayCount"), 1);
+  assert.equal(run("replayCount"), 2);
 });
 
-test("eraser filters a bounded high-DPI region instead of the full canvas", () => {
-  const { run } = board();
+test("eraser filters a bounded high-DPI patch instead of its destination canvas", () => {
+  const { run, sandbox } = board();
+  sandbox.document.createElement = () => ({getContext: () => ({clearRect(){},drawImage(){}})});
   run(`var imageArgs;
     width = 1920; height = 1080; pixelRatio = 2; canvas.width = 3840; canvas.height = 2160;
     for (const method of ["save","restore","beginPath","rect","clip","moveTo","lineTo","stroke"]) ctx[method] = () => {};
@@ -139,6 +140,7 @@ test("eraser filters a bounded high-DPI region instead of the full canvas", () =
     eraseChalk({x:500,y:500},{x:510,y:510});`);
   assert.ok(run("imageArgs[3] * imageArgs[4] < canvas.width * canvas.height / 100"));
   assert.equal(run("imageArgs[3] / pixelRatio"), run("imageArgs[7]"));
+  assert.equal(run("imageArgs[0] === canvas"), false);
 });
 
 test("movement storage is coalesced and final state flush cancels the timer", () => {
@@ -155,7 +157,7 @@ test("movement storage is coalesced and final state flush cancels the timer", ()
   assert.equal(run("stateSaveTimer"), 0);
 });
 
-test("history replay yields, pauses for input, cancels stale rooms and retains acknowledged local ink", () => {
+test("confirmed history advances once during input, accepts new actions and cancels stale rooms", () => {
   const { run, sandbox } = board();
   let frames = [], clock = 0;
   sandbox.requestAnimationFrame = (callback) => { frames.push(callback); return frames.length; };
@@ -163,28 +165,73 @@ test("history replay yields, pauses for input, cancels stale rooms and retains a
   sandbox.performance.now = () => ++clock;
   sandbox.document.createElement = () => ({ getContext: () => ({ setTransform() {} }) });
   run(`var painted = [], commits = 0;
-    ctx.clearRect = () => {}; ctx.drawImage = () => commits++;
-    drawOpeningDust = () => {};
+    compositeRegion = () => commits++;
     drawStrokeOn = stroke => painted.push(stroke.strokeId);
-    sharedStrokes = Array.from({length:200}, (_,i) => ({strokeId:String(i)}));
+    sharedStrokes = Array.from({length:200}, (_,i) => ({strokeId:String(i),points:[[.1,.2]]}));
     optimisticStrokes.set("ack-local", {strokeId:"ack-local",day:dayKey,room:1});
     pendingStrokes = []; renderBoardView();`);
   assert.equal(run("painted.length"), 0);
   frames.shift()();
   assert.ok(run("painted.length") > 0 && run("painted.length") < 200);
-  assert.equal(run("commits"), 0);
+  assert.equal(run("commits"), 1);
   const paintedBeforeInput = run("painted.length");
   run("drawing = true");
   frames.shift()();
-  assert.equal(run("painted.length"), paintedBeforeInput);
-  run("drawing = false; boardLoadId++");
-  frames.shift()();
-  assert.equal(run("commits"), 0);
-  run("painted = []; renderBoardView()");
+  assert.ok(run("painted.length") > paintedBeforeInput);
+  run('sharedStrokes.push({strokeId:"late",points:[[.1,.2]]}); renderBoardView()');
   for (let i = 0; frames.length && i < 300; i++) frames.shift()();
-  assert.equal(run("commits"), 1);
-  assert.equal(run("painted.at(-1)"), "ack-local");
+  assert.equal(run("painted.length"), 201);
+  assert.equal(run("painted.at(-1)"), "late");
+  assert.equal(run('optimisticStrokes.has("ack-local")'), true);
   assert.equal(run("boardNeedsReplay"), false);
+  run('sharedStrokes.push({strokeId:"stale",points:[[.1,.2]]}); renderBoardView(); boardLoadId++');
+  frames.shift()();
+  assert.equal(run("painted.length"), 201);
+});
+
+test("pointer movement is coalesced to one sample per frame", () => {
+  const { run, sandbox } = board();
+  const frames = [];
+  sandbox.requestAnimationFrame = callback => { frames.push(callback); return frames.length; };
+  run('var samples = []; draw = event => samples.push(event.clientX); for(let i=0;i<100;i++) schedulePointer({clientX:i,clientY:1,pointerId:1})');
+  assert.equal(frames.length, 1);
+  frames.shift()();
+  assert.deepEqual(Array.from(run("samples")), [99]);
+});
+
+test("stationary held pointer flushes its final segment on the chunk timer", () => {
+  const { run, sandbox } = board();
+  let timer;
+  sandbox.setTimeout = callback => { timer = callback; return 1; };
+  run('var chunks = 0; queueStroke = () => chunks++; drawing = true; beginStroke({x:1,y:1}); currentStroke.points.push([.2,.2])');
+  timer();
+  assert.equal(run("chunks"), 1);
+});
+
+test("live notifications catch up by HTTP, ignore old rooms and reconnect with polling fallback", () => {
+  const {run, sandbox} = board();
+  const sockets=[];
+  sandbox.WebSocket=class {
+    readyState=0;
+    constructor(url){this.url=url;sockets.push(this)}
+    close(){this.readyState=3}
+  };
+  sandbox.clearInterval=()=>{};
+  sandbox.setInterval=()=>1;
+  sandbox.document.body={dataset:{liveUrl:"wss://test.example/live"}};
+  run("var syncs=0; requestBoardSync=()=>syncs++; connectLive()");
+  assert.equal(sockets[0].url,"wss://test.example/live?room=1");
+  sockets[0].readyState=1; sockets[0].onopen();
+  assert.equal(run("syncs"),1);
+  sockets[0].onmessage({data:run('JSON.stringify({type:"board",room:1,day:dayKey,cursor:5})')});
+  assert.equal(run("syncs"),2);
+  run('currentRoom="2";connectLive(true)');
+  sockets[0].onmessage({data:run('JSON.stringify({type:"board",room:1,day:dayKey,cursor:6})')});
+  assert.equal(run("syncs"),2);
+  sockets[1].onclose();
+  assert.equal(run("syncs"),3);
+  assert.equal(run("liveSocket"),null);
+  assert.equal(run("liveAttempt"),1);
 });
 
 test("pointer coordinates do not force a layout read for each movement", () => {

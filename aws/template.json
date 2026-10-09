@@ -21,12 +21,62 @@
       "Properties": {
         "BillingMode": "PROVISIONED",
         "ProvisionedThroughput": { "ReadCapacityUnits": 10, "WriteCapacityUnits": 20 },
+        "StreamSpecification": { "StreamViewType": "NEW_IMAGE" },
         "AttributeDefinitions": [{ "AttributeName": "pk", "AttributeType": "S" }, { "AttributeName": "sk", "AttributeType": "N" }],
         "KeySchema": [{ "AttributeName": "pk", "KeyType": "HASH" }, { "AttributeName": "sk", "KeyType": "RANGE" }],
         "TimeToLiveSpecification": { "AttributeName": "expires", "Enabled": true },
         "Tags": [{ "Key": "Project", "Value": "Chillpan" }]
       }
     },
+    "Connections": {
+      "Type": "AWS::DynamoDB::Table",
+      "Properties": {
+        "BillingMode": "PAY_PER_REQUEST",
+        "AttributeDefinitions": [{ "AttributeName": "room", "AttributeType": "S" }, { "AttributeName": "connection", "AttributeType": "S" }],
+        "KeySchema": [{ "AttributeName": "room", "KeyType": "HASH" }, { "AttributeName": "connection", "KeyType": "RANGE" }],
+        "TimeToLiveSpecification": { "AttributeName": "expires", "Enabled": true }
+      }
+    },
+    "LiveApi": { "Type": "AWS::ApiGatewayV2::Api", "Properties": { "Name": { "Fn::Sub": "${AWS::StackName}-live" }, "ProtocolType": "WEBSOCKET", "RouteSelectionExpression": "$request.body.action" } },
+    "LiveStage": { "Type": "AWS::ApiGatewayV2::Stage", "Properties": { "ApiId": { "Ref": "LiveApi" }, "StageName": "live", "AutoDeploy": true,
+      "DefaultRouteSettings": { "ThrottlingBurstLimit": 20, "ThrottlingRateLimit": 10 } } },
+    "LiveRole": { "Type": "AWS::IAM::Role", "Properties": {
+      "AssumeRolePolicyDocument": { "Version": "2012-10-17", "Statement": [{ "Effect": "Allow", "Principal": { "Service": "lambda.amazonaws.com" }, "Action": "sts:AssumeRole" }] },
+      "ManagedPolicyArns": ["arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"],
+      "Policies": [{ "PolicyName": "Realtime", "PolicyDocument": { "Version": "2012-10-17", "Statement": [
+        { "Effect": "Allow", "Action": ["dynamodb:PutItem", "dynamodb:DeleteItem", "dynamodb:Query"], "Resource": { "Fn::GetAtt": ["Connections", "Arn"] } },
+        { "Effect": "Allow", "Action": ["dynamodb:DescribeStream", "dynamodb:GetRecords", "dynamodb:GetShardIterator"], "Resource": { "Fn::GetAtt": ["BoardTable", "StreamArn"] } },
+        { "Effect": "Allow", "Action": "dynamodb:ListStreams", "Resource": "*" },
+        { "Effect": "Allow", "Action": "execute-api:ManageConnections", "Resource": { "Fn::Sub": "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LiveApi}/live/POST/@connections/*" } }
+      ] } }]
+    } },
+    "LiveFunction": { "Type": "AWS::Lambda::Function", "Properties": {
+      "Runtime": "nodejs22.x", "Handler": "index.handler", "Architectures": ["arm64"], "MemorySize": 128, "Timeout": 30,
+      "Role": { "Fn::GetAtt": ["LiveRole", "Arn"] }, "Code": { "ZipFile": "INJECTED_BY_BUILD" },
+      "Environment": { "Variables": {
+        "CONNECTION_TABLE": { "Ref": "Connections" },
+        "LIVE_ENDPOINT": { "Fn::Sub": "https://${LiveApi}.execute-api.${AWS::Region}.amazonaws.com/live" },
+        "ALLOWED_ORIGINS": { "Fn::Join": [",", [
+          { "Fn::Sub": "https://${Distribution.DomainName}" },
+          { "Fn::If": ["HasCustomDomain", { "Fn::Sub": "https://${DomainName}" }, "https://unused.invalid"] }
+        ]] }
+      } }
+    } },
+    "LiveLogs": { "Type": "AWS::Logs::LogGroup", "Properties": { "LogGroupName": { "Fn::Sub": "/aws/lambda/${LiveFunction}" }, "RetentionInDays": 3 } },
+    "LiveIntegration": { "Type": "AWS::ApiGatewayV2::Integration", "Properties": {
+      "ApiId": { "Ref": "LiveApi" }, "IntegrationType": "AWS_PROXY", "IntegrationMethod": "POST",
+      "IntegrationUri": { "Fn::Sub": "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LiveFunction.Arn}/invocations" }
+    } },
+    "LiveConnect": { "Type": "AWS::ApiGatewayV2::Route", "Properties": { "ApiId": { "Ref": "LiveApi" }, "RouteKey": "$connect", "Target": { "Fn::Sub": "integrations/${LiveIntegration}" } } },
+    "LiveDisconnect": { "Type": "AWS::ApiGatewayV2::Route", "Properties": { "ApiId": { "Ref": "LiveApi" }, "RouteKey": "$disconnect", "Target": { "Fn::Sub": "integrations/${LiveIntegration}" } } },
+    "LiveDefault": { "Type": "AWS::ApiGatewayV2::Route", "Properties": { "ApiId": { "Ref": "LiveApi" }, "RouteKey": "$default", "Target": { "Fn::Sub": "integrations/${LiveIntegration}" } } },
+    "AllowLive": { "Type": "AWS::Lambda::Permission", "Properties": { "FunctionName": { "Ref": "LiveFunction" }, "Action": "lambda:InvokeFunction", "Principal": "apigateway.amazonaws.com", "SourceArn": { "Fn::Sub": "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LiveApi}/*" } } },
+    "BoardChanges": { "Type": "AWS::Lambda::EventSourceMapping", "DependsOn": "LiveLogs", "Properties": {
+      "EventSourceArn": { "Fn::GetAtt": ["BoardTable", "StreamArn"] }, "FunctionName": { "Ref": "LiveFunction" },
+      "StartingPosition": "TRIM_HORIZON", "BatchSize": 100, "MaximumBatchingWindowInSeconds": 0,
+      "BisectBatchOnFunctionError": true, "MaximumRetryAttempts": 5,
+      "FilterCriteria": { "Filters": [{ "Pattern": "{\"eventName\":[\"INSERT\"],\"dynamodb\":{\"NewImage\":{\"data\":{\"S\":[{\"exists\":true}]}}}}" }] }
+    } },
     "WebBucket": {
       "Type": "AWS::S3::Bucket",
       "DeletionPolicy": "Retain",
@@ -139,6 +189,7 @@
     }
   },
   "Outputs": {
+    "LiveUrl": { "Value": { "Fn::Sub": "wss://${LiveApi}.execute-api.${AWS::Region}.amazonaws.com/live" } },
     "SiteUrl": { "Value": { "Fn::If": ["HasCustomDomain", { "Fn::Sub": "https://${DomainName}" }, { "Fn::Sub": "https://${Distribution.DomainName}" }] } },
     "Bucket": { "Value": { "Ref": "WebBucket" } },
     "DistributionId": { "Value": { "Ref": "Distribution" } },
