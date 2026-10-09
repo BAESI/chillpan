@@ -15,14 +15,18 @@
     <main class="app-shell">
       <canvas id="chalkboard" aria-label="Global chalkboard drawing surface"></canvas>
 
-      <section class="topbar" aria-label="Chillpan status">
-        <button class="new-chalk" id="newChalkButton" type="button">
-          <span class="chalk-swatch" aria-hidden="true"></span>
-          <span id="newChalkLabel">새 분필</span>
-        </button>
-        <div class="language-toggle" role="group" aria-label="Language">
-          <button type="button" data-language="ko" lang="ko" aria-label="한국어" aria-pressed="false">KO</button>
-          <button type="button" data-language="en" lang="en" aria-label="English" aria-pressed="false">EN</button>
+      <section class="chalk-tray" aria-label="분필 받침대">
+        <div class="tray-objects">
+          <div class="eraser" aria-hidden="true">
+            <span class="eraser-handle"></span>
+            <span class="eraser-felt"></span>
+          </div>
+          <button class="new-chalk" id="newChalkButton" type="button" aria-label="새 분필">
+            <span class="resting-chalk" aria-hidden="true"></span>
+            <span class="spare-chalk" aria-hidden="true"></span>
+            <span class="tool-tooltip" id="newChalkLabel">새 분필</span>
+          </button>
+          <div class="tray-dust" aria-hidden="true"></div>
         </div>
       </section>
 

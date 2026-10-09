@@ -2,20 +2,17 @@ const canvas = document.querySelector("#chalkboard");
 const ctx = canvas.getContext("2d", { alpha: true });
 const chalkCursor = document.querySelector("#chalkCursor");
 const notice = document.querySelector("#notice");
-const languageButtons = [...document.querySelectorAll("[data-language]")];
 const newChalkButton = document.querySelector("#newChalkButton");
 
 const CHALK_BUDGET = 8800;
 const CHALK_SIZE = 5;
 const STORAGE_PREFIX = "chillpan";
 const COLORS = ["#f28eaa", "#82d9ad", "#85bdf3", "#f1d46f", "#c6a0ee", "#f5ad7c"];
-const LANGUAGE_KEY = `${STORAGE_PREFIX}:language`;
 const TEXT = {
   ko: {
     description: "색색의 분필로 함께 흔적을 남기는 하루짜리 칠판 Chillpan.",
     board: "함께 그리는 칠판",
-    status: "Chillpan 상태",
-    language: "언어 선택",
+    tray: "분필 받침대",
     welcome: "오늘의 분필로 흔적을 남겨요",
     gone: "분필을 다 썼어요. 새 분필을 뽑아주세요.",
     finished: "분필을 다 썼어요. 새 분필로 이어 그릴 수 있어요.",
@@ -26,8 +23,7 @@ const TEXT = {
   en: {
     description: "Chillpan is a shared daily chalkboard for leaving traces in colorful chalk.",
     board: "Global chalkboard drawing surface",
-    status: "Chillpan status",
-    language: "Language",
+    tray: "Chalk tray",
     welcome: "leave a trace with today's chalk",
     gone: "your chalk is gone. pick a new piece.",
     finished: "the chalk is finished. pick a new piece to keep drawing.",
@@ -37,10 +33,7 @@ const TEXT = {
   },
 };
 
-let language = localStorage.getItem(LANGUAGE_KEY);
-if (language !== "ko" && language !== "en") {
-  language = navigator.language.toLowerCase().startsWith("ko") ? "ko" : "en";
-}
+const language = navigator.language.toLowerCase().startsWith("ko") ? "ko" : "en";
 let noticeKey = "welcome";
 
 let dayKey = getDayKey();
@@ -59,11 +52,6 @@ init();
 
 function init() {
   applyLanguage();
-  languageButtons.forEach((button) => button.addEventListener("click", () => {
-    language = button.dataset.language;
-    localStorage.setItem(LANGUAGE_KEY, language);
-    applyLanguage();
-  }));
   newChalkButton.addEventListener("click", pickNewChalk);
   loadState();
   saveState();
@@ -278,13 +266,10 @@ function applyLanguage() {
   document.documentElement.lang = language;
   document.querySelector('meta[name="description"]').content = text.description;
   canvas.setAttribute("aria-label", text.board);
-  document.querySelector(".topbar").setAttribute("aria-label", text.status);
-  document.querySelector(".language-toggle").setAttribute("aria-label", text.language);
+  document.querySelector(".chalk-tray").setAttribute("aria-label", text.tray);
   notice.textContent = text[noticeKey];
   document.querySelector("#newChalkLabel").textContent = text.newChalk;
-  languageButtons.forEach((button) => {
-    button.setAttribute("aria-pressed", String(button.dataset.language === language));
-  });
+  newChalkButton.setAttribute("aria-label", text.newChalk);
 }
 
 function showNotice(key) {
