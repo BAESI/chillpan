@@ -64,6 +64,9 @@ export async function POST(request: Request) {
   }
   const forwarded = await forwardToAws(request, text);
   if (forwarded) return forwarded;
+  if (body.strokes.some((stroke: Stroke) => stroke.tool === "eraser")) {
+    return Response.json({ error: "Shared erasing requires the AWS board backend" }, { status: 503, headers });
+  }
   await env.DB!.batch([
     env.DB!.prepare("DELETE FROM strokes WHERE id IN (SELECT id FROM strokes WHERE day < ? LIMIT 1000)").bind(day),
     ...body.strokes.map((stroke: Stroke) => env.DB!.prepare(

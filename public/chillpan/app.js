@@ -10,10 +10,14 @@ const dustCtx = dustCanvas.getContext("2d");
 
 const CHALK_BUDGET = 8800;
 const CHALK_SIZE = 5;
+const ERASER_SIZE = 32;
+const ERASER_BUDGET = 2400;
 const SYNC_INTERVAL = Math.max(750, Number(document.body?.dataset?.syncMs) || 3000);
 const STROKE_INTERVAL = Math.max(120, Number(document.body?.dataset?.strokeMs) || 600);
 const STORAGE_PREFIX = "chillpan";
 const COLORS = ["#f28eaa", "#82d9ad", "#85bdf3", "#f1d46f", "#c6a0ee", "#f5ad7c"];
+const GOLD = "#edc568";
+const CHALK_KINDS = ["normal", "rainbow", "gold", "king", "eraser"];
 const TEXT = {
   ko: {
     description: "색색의 분필로 함께 흔적을 남기는 하루짜리 칠판 Chillpan.",
@@ -27,6 +31,11 @@ const TEXT = {
     newDay: "자정이 되어 새로운 칠판이 열렸어요.",
     newChalk: "새 분필",
     chalkReady: "새 분필을 뽑았어요.",
+    hiddenRainbow: "히든 분필 발견! 무지개 분필을 뽑았어요.",
+    hiddenGold: "히든 분필 발견! 금분필을 뽑았어요.",
+    hiddenKing: "히든 분필 발견! 왕분필을 뽑았어요.",
+    hiddenEraser: "히든 발견! 지우개를 뽑았어요.",
+    eraserGone: "지우개를 다 썼어요. 새 분필을 뽑아주세요.",
     syncError: "칠판에 다시 연결하고 있어요.",
   },
   en: {
@@ -41,6 +50,11 @@ const TEXT = {
     newDay: "a new board opened at midnight.",
     newChalk: "New chalk",
     chalkReady: "a fresh piece of chalk is yours.",
+    hiddenRainbow: "Hidden chalk! You found rainbow chalk.",
+    hiddenGold: "Hidden chalk! You found golden chalk.",
+    hiddenKing: "Hidden chalk! You found giant chalk.",
+    hiddenEraser: "Hidden find! You found an eraser.",
+    eraserGone: "your eraser is worn out. pick a new piece of chalk.",
     syncError: "reconnecting to the shared board.",
   },
 };
@@ -62,12 +76,17 @@ let boardLoadId = 0;
 let lastPoint = null;
 let chalkRemaining = CHALK_BUDGET;
 let color = COLORS[Math.floor(Math.random() * COLORS.length)];
+let chalkKind = "normal";
+let sharedStrokes = [];
+const sharedStrokeIds = new Set();
 let boardCursor = 0;
 let pollTimer = 0;
 let sendingStrokes = false;
 let retryTimer = 0;
 let currentStroke = null;
 let strokeStartedAt = 0;
+let strokeContinuation = false;
+let cursorPoint = null;
 let syncFailed = false;
 let pendingStrokes = [];
 try { pendingStrokes = JSON.parse(sessionStorage.getItem(`${STORAGE_PREFIX}:pending`) || "[]"); } catch {}
@@ -145,13 +164,19 @@ function updateRoomSelection() {
 }
 
 function loadState() {
-  const saved = JSON.parse(localStorage.getItem(stateKey) || "{}");
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(stateKey) || "{}") || {}; } catch {}
   chalkRemaining = Number.isFinite(saved.chalkRemaining) ? saved.chalkRemaining : CHALK_BUDGET;
+  chalkKind = CHALK_KINDS.includes(saved.chalkKind) ? saved.chalkKind : "normal";
   color = COLORS.includes(saved.color) ? saved.color : color;
+  if (chalkKind === "gold") color = GOLD;
+  chalkRemaining = Math.max(0, Math.min(chalkRemaining, toolBudget()));
 }
 
+function toolBudget() { return chalkKind === "eraser" ? ERASER_BUDGET : CHALK_BUDGET; }
+
 function saveState() {
-  localStorage.setItem(stateKey, JSON.stringify({ chalkRemaining, color }));
+  localStorage.setItem(stateKey, JSON.stringify({ chalkRemaining, color, chalkKind }));
 }
 
 function resizeCanvas() {
@@ -193,6 +218,8 @@ function loadBoard() {
   const generation = ++boardLoadId;
   clearTimeout(pollTimer);
   boardCursor = 0;
+  sharedStrokes = [];
+  sharedStrokeIds.clear();
   seenStrokes.clear();
   pendingStrokes.forEach((stroke) => seenStrokes.add(stroke.strokeId));
   loadingBoard = true;
@@ -215,9 +242,13 @@ async function pollBoard(generation) {
       return;
     }
     data.strokes.forEach((stroke) => {
-      if (!seenStrokes.has(stroke.strokeId)) drawSharedStroke(stroke);
+      if (!sharedStrokeIds.has(stroke.strokeId)) {
+        sharedStrokes.push(stroke);
+        sharedStrokeIds.add(stroke.strokeId);
+      }
       seenStrokes.add(stroke.strokeId);
     });
+    if (!data.hasMore && (loadingBoard || data.strokes.length)) renderBoardView();
     boardCursor = data.cursor;
     if (!data.hasMore) {
       loadingBoard = false;
@@ -236,6 +267,11 @@ async function pollBoard(generation) {
 
 function drawSharedStroke(stroke) {
   const points = stroke.points.map(([x, y]) => ({ x: x * width, y: y * height }));
+  if (stroke.tool === "eraser") {
+    if (points.length === 1) eraseChalk(points[0], points[0]);
+    else points.slice(1).forEach((point, index) => eraseChalk(points[index], point));
+    return;
+  }
   ctx.save();
   ctx.strokeStyle = stroke.color;
   ctx.fillStyle = stroke.color;
@@ -254,15 +290,54 @@ function drawSharedStroke(stroke) {
   ctx.restore();
 }
 
+function renderBoardView() {
+  ctx.clearRect(0, 0, width, height);
+  drawOpeningDust();
+  sharedStrokes.forEach(drawSharedStroke);
+  pendingStrokes.filter((stroke) => stroke.day === dayKey && String(stroke.room) === currentRoom && !sharedStrokeIds.has(stroke.strokeId)).forEach(drawSharedStroke);
+  if (currentStroke) drawSharedStroke(currentStroke);
+}
+
+function eraseChalk(from, to) {
+  const padding = ERASER_SIZE;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(Math.min(from.x, to.x) - padding, Math.min(from.y, to.y) - padding,
+    Math.abs(to.x - from.x) + padding * 2, Math.abs(to.y - from.y) + padding * 2);
+  ctx.clip();
+  // Blur the existing pigment before lifting a little of it on each pass.
+  ctx.globalCompositeOperation = "copy";
+  ctx.globalAlpha = 1;
+  ctx.filter = "blur(1px)";
+  ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, width, height);
+  ctx.globalCompositeOperation = "destination-out";
+  ctx.filter = "blur(1px)";
+  ctx.globalAlpha = 0.38;
+  ctx.lineWidth = ERASER_SIZE;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  if (from.x === to.x && from.y === to.y) {
+    ctx.arc(to.x, to.y, ERASER_SIZE / 2, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function normalizedPoint(point) {
   return [Math.max(0, Math.min(1, point.x / width)), Math.max(0, Math.min(1, point.y / height))];
 }
 
-function beginStroke(point) {
+function beginStroke(point, continuation = false) {
+  strokeContinuation = continuation;
   strokeStartedAt = performance.now();
   currentStroke = {
     strokeId: crypto.randomUUID(), day: dayKey, room: Number(currentRoom), color,
     size: CHALK_SIZE / width, points: [normalizedPoint(point)],
+    ...(chalkKind === "eraser" ? { tool: "eraser" } : {}),
   };
 }
 
@@ -271,7 +346,11 @@ function queueStroke(continueDrawing = false) {
   pendingStrokes.push(currentStroke);
   seenStrokes.add(currentStroke.strokeId);
   currentStroke = null;
-  if (continueDrawing) beginStroke(lastPoint);
+  if (continueDrawing) {
+    // Rainbow colors travel as ordinary strokes, without adding API calls or a new protocol.
+    if (chalkKind === "rainbow") color = COLORS[(COLORS.indexOf(color) + 1) % COLORS.length];
+    beginStroke(lastPoint, true);
+  }
   savePendingStrokes();
   flushStrokes();
 }
@@ -319,7 +398,7 @@ function startDrawing(event) {
   moveChalkCursor(event);
   if (loadingBoard || drawing) return;
   if (chalkRemaining <= 0) {
-    showNotice("gone");
+    showNotice(chalkKind === "eraser" ? "eraserGone" : "gone");
     return;
   }
   canvas.setPointerCapture(event.pointerId);
@@ -329,21 +408,32 @@ function startDrawing(event) {
   beginStroke(lastPoint);
   lastStrokeTime = performance.now();
   prepareChalkSound();
-  emitFallingDust(lastPoint, lastPoint, 4);
-  placeChalkDust(lastPoint.x, lastPoint.y, CHALK_SIZE * 0.7);
+  if (chalkKind !== "eraser") {
+    emitFallingDust(lastPoint, lastPoint, 4);
+    placeChalkDust(lastPoint.x, lastPoint.y, CHALK_SIZE * 0.7);
+  }
 }
 
 function draw(event) {
   moveChalkCursor(event);
   if (!drawing || event.pointerId !== activePointerId || !lastPoint || chalkRemaining <= 0) return;
-  const point = getPoint(event);
-  const distance = Math.hypot(point.x - lastPoint.x, point.y - lastPoint.y);
+  let point = getPoint(event);
+  let distance = Math.hypot(point.x - lastPoint.x, point.y - lastPoint.y);
   if (distance < 0.4) return;
 
-  const spend = Math.max(distance * (CHALK_SIZE / 7), 0.7);
+  const rate = chalkKind === "eraser" ? 1 : CHALK_SIZE / 7;
+  if (distance * rate > chalkRemaining) {
+    const fraction = chalkRemaining / (distance * rate);
+    point = { x: lastPoint.x + (point.x - lastPoint.x) * fraction, y: lastPoint.y + (point.y - lastPoint.y) * fraction };
+    distance *= fraction;
+  }
+  const spend = Math.max(distance * rate, 0.7);
   chalkRemaining = Math.max(0, chalkRemaining - spend);
-  drawChalkLine(lastPoint, point, CHALK_SIZE);
-  emitFallingDust(lastPoint, point, Math.min(18, Math.max(2, Math.ceil(distance / 7))));
+  if (chalkKind === "eraser") eraseChalk(lastPoint, point);
+  else {
+    drawChalkLine(lastPoint, point, CHALK_SIZE);
+    emitFallingDust(lastPoint, point, Math.min(18, Math.max(2, Math.ceil(distance / 7))));
+  }
   const now = performance.now();
   playChalkSound(distance / Math.max(8, now - lastStrokeTime));
   lastStrokeTime = now;
@@ -355,14 +445,21 @@ function draw(event) {
 
   if (chalkRemaining <= 0) {
     stopDrawing(event);
-    showNotice("finished");
+    showNotice(chalkKind === "eraser" ? "eraserGone" : "finished");
   }
 }
 
 function stopDrawing() {
   stopChalkSound();
   if (!drawing) return;
+  if (chalkKind === "eraser" && currentStroke?.points.length === 1 && !strokeContinuation) {
+    eraseChalk(lastPoint, lastPoint);
+    chalkRemaining = Math.max(0, chalkRemaining - 12);
+    saveState();
+    updateChalkCursor();
+  }
   drawing = false;
+  if (strokeContinuation && currentStroke?.points.length === 1) currentStroke = null;
   queueStroke();
   lastPoint = null;
   if (activePointerId !== null && canvas.hasPointerCapture(activePointerId)) {
@@ -384,7 +481,7 @@ function emitFallingDust(from, to, count) {
       size: 0.7 + Math.random() * 1.7,
       life,
       duration: life,
-      color,
+      color: chalkKind === "rainbow" ? COLORS[Math.floor(Math.random() * COLORS.length)] : color,
     });
   }
   if (!dustFrame) {
@@ -514,20 +611,32 @@ function placeChalkDust(x, y, radius) {
 }
 
 function updateChalkCursor() {
-  const cursorScale = Math.max(0, Math.min(1, chalkRemaining / CHALK_BUDGET));
+  const cursorScale = Math.max(0, Math.min(1, chalkRemaining / toolBudget()));
   document.documentElement.style.setProperty("--chalk", color);
-  chalkCursor.style.height = `${13 + 81 * cursorScale}px`;
+  chalkCursor.style.height = `${chalkKind === "eraser" ? 10 + 20 * cursorScale : 13 + (chalkKind === "king" ? 126 : 81) * cursorScale}px`;
+  chalkCursor.style.width = chalkKind === "eraser" ? "48px" : chalkKind === "king" ? "26px" : "15px";
+  document.documentElement.dataset.chalkKind = chalkKind;
   chalkCursor.classList.toggle("is-spent", chalkRemaining <= 0);
+  if (cursorPoint) moveChalkCursor(cursorPoint);
 }
 
 function pickNewChalk() {
   stopDrawing();
+  chalkKind = rollChalkKind();
   const choices = COLORS.filter((candidate) => candidate !== color);
-  color = choices[Math.floor(Math.random() * choices.length)];
-  chalkRemaining = CHALK_BUDGET;
+  color = chalkKind === "gold" ? GOLD : choices[Math.floor(Math.random() * choices.length)];
+  chalkRemaining = toolBudget();
   saveState();
   updateChalkCursor();
-  showNotice("chalkReady");
+  showNotice(({ rainbow: "hiddenRainbow", gold: "hiddenGold", king: "hiddenKing", eraser: "hiddenEraser" })[chalkKind] || "chalkReady");
+}
+
+function rollChalkKind(roll = Math.random()) {
+  if (roll < 0.01) return "gold";
+  if (roll < 0.04) return "rainbow";
+  if (roll < 0.06) return "king";
+  if (roll < 0.08) return "eraser";
+  return "normal";
 }
 
 function tick() {
@@ -540,6 +649,7 @@ function resetForNewDay(nextDayKey) {
   dayKey = nextDayKey;
   stateKey = `${STORAGE_PREFIX}:state:${dayKey}`;
   chalkRemaining = CHALK_BUDGET;
+  chalkKind = "normal";
   color = COLORS[Math.floor(Math.random() * COLORS.length)];
   pendingStrokes = pendingStrokes.filter((stroke) => stroke.day === dayKey);
   savePendingStrokes();
@@ -565,10 +675,20 @@ function applyLanguage() {
 
 function showNotice(key) {
   noticeKey = key;
-  notice.textContent = TEXT[language][key];
+  const hidden = key.startsWith("hidden");
+  notice.classList.toggle("is-hidden-find", hidden);
+  if (hidden) {
+    const words = TEXT[language][key].split(" ");
+    notice.replaceChildren(...words.map((word, index) => {
+      const span = document.createElement("span");
+      span.textContent = word;
+      span.style.color = COLORS[index % COLORS.length];
+      return span;
+    }));
+  } else notice.textContent = TEXT[language][key];
   notice.classList.remove("is-hidden");
   clearTimeout(showNotice.timeout);
-  showNotice.timeout = setTimeout(softenNotice, 3200);
+  showNotice.timeout = setTimeout(softenNotice, hidden ? 5400 : 3200);
 }
 
 function softenNotice() {
@@ -585,5 +705,7 @@ function hideChalkCursor() {
 }
 
 function moveChalkCursor(event) {
-  chalkCursor.style.transform = `translate3d(${event.clientX - 7.5}px, ${event.clientY}px, 0) rotate(-45deg)`;
+  cursorPoint = { clientX: event.clientX, clientY: event.clientY };
+  const halfWidth = chalkKind === "eraser" ? 24 : chalkKind === "king" ? 13 : 7.5;
+  chalkCursor.style.transform = `translate3d(${event.clientX - halfWidth}px, ${event.clientY}px, 0) rotate(${chalkKind === "eraser" ? -12 : -45}deg)`;
 }

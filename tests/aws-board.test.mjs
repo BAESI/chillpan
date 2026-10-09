@@ -64,3 +64,22 @@ test("mixed-room batches remain isolated and can be retried", async () => {
   assert.equal((await handler(batch)).statusCode, 200);
   for (const room of [1, 3]) assert.equal(JSON.parse((await handler(get(room))).body).strokes.length, 1);
 });
+
+test("gold and rainbow colors round-trip without changing the shared stroke protocol", async () => {
+  const handler = fixture();
+  const colors = ["#edc568", "#f28eaa", "#82d9ad", "#85bdf3", "#f1d46f", "#c6a0ee", "#f5ad7c"];
+  const strokes = colors.map((color, i) => ({ ...stroke(`hidden-${i}`), color }));
+  assert.equal((await handler(post(strokes))).statusCode, 200);
+  assert.deepEqual(JSON.parse((await handler(get())).body).strokes.map(s => s.color), colors);
+  assert.equal((await handler(post([{ ...stroke("invalid-color"), color: "#000000" }]))).statusCode, 400);
+});
+
+test("erasers persist in canonical order with drawings and reject unknown tools", async () => {
+  const handler = fixture();
+  assert.equal((await handler(post([stroke("before"), {...stroke("eraser"), tool:"eraser"}, stroke("after")]))).statusCode, 200);
+  const rows = JSON.parse((await handler(get())).body).strokes;
+  assert.deepEqual(rows.map(s => s.strokeId), ["before", "eraser", "after"]);
+  assert.equal(rows[1].tool, "eraser");
+  assert.equal(rows[0].tool, undefined);
+  assert.equal((await handler(post([{...stroke("bad-tool"),tool:"clear-all"}]))).statusCode, 400);
+});

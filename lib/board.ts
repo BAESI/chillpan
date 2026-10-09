@@ -1,4 +1,4 @@
-export const COLORS = ["#f28eaa", "#82d9ad", "#85bdf3", "#f1d46f", "#c6a0ee", "#f5ad7c"];
+export const COLORS = ["#f28eaa", "#82d9ad", "#85bdf3", "#f1d46f", "#c6a0ee", "#f5ad7c", "#edc568"];
 
 export function boardDay(date = new Date()) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -13,6 +13,7 @@ export type Stroke = {
   color: string;
   size: number;
   points: [number, number][];
+  tool?: "eraser";
 };
 
 export function validStroke(value: unknown): value is Stroke {
@@ -21,6 +22,7 @@ export function validStroke(value: unknown): value is Stroke {
   return typeof stroke.strokeId === "string" && /^[a-zA-Z0-9-]{1,80}$/.test(stroke.strokeId)
     && typeof stroke.day === "string" && /^\d{4}-\d{2}-\d{2}$/.test(stroke.day)
     && [1, 2, 3].includes(stroke.room) && COLORS.includes(stroke.color)
+    && (stroke.tool === undefined || stroke.tool === "eraser")
     && Number.isFinite(stroke.size) && stroke.size >= 0.0001 && stroke.size <= 0.04
     && Array.isArray(stroke.points) && stroke.points.length >= 1 && stroke.points.length <= 96
     && stroke.points.every((point) => Array.isArray(point) && point.length === 2

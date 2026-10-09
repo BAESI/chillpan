@@ -69,7 +69,15 @@ node aws/deploy.mjs --profile chillpan-personal --account 862292240027 --deploy 
 
 The main stack manages the CloudFront alias, SNI HTTPS certificate, and Route 53 A/AAAA alias records. Subsequent normal deploys omit these flags: CloudFormation deploy preserves the existing parameter values. The original CloudFront URL remains usable and shares the same Lambda/table. A new hostname has separate browser-local chalk/session state, but not separate shared drawings. Do not delete the certificate stack while the distribution uses it.
 
-## AdSense Preparation
+## Hidden Tools
+
+New chalk rolls: normal 92%, rainbow 3%, giant 2%, eraser 2%, gold 1%. Rainbow changes palette at existing stroke chunk boundaries; gold adds one accepted ink color; giant changes cursor dimensions only. All ink keeps the fixed 5 CSS-pixel width. Discovery messages are transient and respect reduced-motion preferences.
+
+Erasers have a separate 2,400-unit device-local budget, a shrinking rectangular cursor, and a fixed 32 CSS-pixel brush. Each pass blurs existing pigment and lifts 38% of its opacity; repeated passes clean the same area. The fixed motto is outside the drawing canvas and cannot be erased. Budgets/rolls are client-side game mechanics, not server-enforced abuse protection.
+
+Erase actions use the optional `tool: "eraser"` stroke field and are persisted with ink in the same canonical sequence. Clients replay confirmed actions before pending local actions to reconcile concurrent drawing/erasing. AWS remains the shared source of truth; the old D1 fallback refuses erasing rather than silently saving it as ink. Already-open old clients must refresh to understand erase actions. Deploy the compatible backend before the frontend.
+
+## AdSense Setup
 
 Advertising is disabled. No fake publisher ID, tracking script, or ad placement is shipped.
 

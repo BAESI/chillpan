@@ -1,6 +1,6 @@
 const { randomUUID } = require("node:crypto");
 
-const COLORS = ["#f28eaa", "#82d9ad", "#85bdf3", "#f1d46f", "#c6a0ee", "#f5ad7c"];
+const COLORS = ["#f28eaa", "#82d9ad", "#85bdf3", "#f1d46f", "#c6a0ee", "#f5ad7c", "#edc568"];
 const dayKey = (date) => new Intl.DateTimeFormat("en-CA", {
   timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
 }).format(date);
@@ -10,6 +10,7 @@ const key = (pk, sk = 0) => ({ pk: S(pk), sk: N(sk) });
 const validStroke = (s) => s && typeof s.strokeId === "string" && /^[a-zA-Z0-9-]{1,80}$/.test(s.strokeId)
   && typeof s.day === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s.day)
   && [1, 2, 3].includes(s.room) && COLORS.includes(s.color)
+  && (s.tool === undefined || s.tool === "eraser")
   && Number.isFinite(s.size) && s.size >= 0.0001 && s.size <= 0.04
   && Array.isArray(s.points) && s.points.length >= 1 && s.points.length <= 96
   && s.points.every((p) => Array.isArray(p) && p.length === 2
@@ -48,8 +49,8 @@ function createHandler({ send, table, now = () => new Date(), pause = (ms) => ne
         ExpressionAttributeValues: { ":next": N(sequence + fresh.length), ":previous": N(sequence), ":expires": N(expires) },
       } }];
       fresh.forEach((stroke, i) => {
-        const { strokeId, color, size, points } = stroke;
-        const data = { strokeId, color, size, points, day, room };
+        const { strokeId, color, size, points, tool } = stroke;
+        const data = { strokeId, color, size, points, day, room, ...(tool === "eraser" ? { tool } : {}) };
         actions.push({ Put: { TableName: table, Item: {
           ...key(pk, sequence + i + 1), data: S(JSON.stringify(data)), expires: N(expires),
         }, ConditionExpression: "attribute_not_exists(pk)" } });
