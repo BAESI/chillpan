@@ -3,32 +3,37 @@ const ctx = canvas.getContext("2d", { alpha: true });
 const chalkCursor = document.querySelector("#chalkCursor");
 const notice = document.querySelector("#notice");
 const languageButtons = [...document.querySelectorAll("[data-language]")];
+const newChalkButton = document.querySelector("#newChalkButton");
 
 const CHALK_BUDGET = 8800;
 const CHALK_SIZE = 5;
 const STORAGE_PREFIX = "chillpan";
-const COLORS = ["#eeeadd", "#dbe8d2", "#f0d1d4", "#ccdced", "#eadfb8"];
+const COLORS = ["#f28eaa", "#82d9ad", "#85bdf3", "#f1d46f", "#c6a0ee", "#f5ad7c"];
 const LANGUAGE_KEY = `${STORAGE_PREFIX}:language`;
 const TEXT = {
   ko: {
-    description: "하루에 분필 하나, 모두가 함께 흔적을 남기는 칠판 Chillpan.",
+    description: "색색의 분필로 함께 흔적을 남기는 하루짜리 칠판 Chillpan.",
     board: "함께 그리는 칠판",
     status: "Chillpan 상태",
     language: "언어 선택",
     welcome: "오늘의 분필로 흔적을 남겨요",
-    gone: "오늘의 분필을 다 썼어요. 자정이 지나면 다시 만나요.",
-    finished: "분필을 다 썼어요. 남긴 흔적은 자정까지 머물러요.",
+    gone: "분필을 다 썼어요. 새 분필을 뽑아주세요.",
+    finished: "분필을 다 썼어요. 새 분필로 이어 그릴 수 있어요.",
     newDay: "자정이 되어 새로운 칠판이 열렸어요.",
+    newChalk: "새 분필",
+    chalkReady: "새 분필을 뽑았어요.",
   },
   en: {
-    description: "Chillpan is a quiet global chalkboard where each visitor gets one piece of chalk per day.",
+    description: "Chillpan is a shared daily chalkboard for leaving traces in colorful chalk.",
     board: "Global chalkboard drawing surface",
     status: "Chillpan status",
     language: "Language",
     welcome: "leave a trace with today's chalk",
-    gone: "today's chalk is gone. come back after midnight.",
-    finished: "the chalk is finished. your trace stays until midnight.",
+    gone: "your chalk is gone. pick a new piece.",
+    finished: "the chalk is finished. pick a new piece to keep drawing.",
     newDay: "a new board opened at midnight.",
+    newChalk: "New chalk",
+    chalkReady: "a fresh piece of chalk is yours.",
   },
 };
 
@@ -59,6 +64,7 @@ function init() {
     localStorage.setItem(LANGUAGE_KEY, language);
     applyLanguage();
   }));
+  newChalkButton.addEventListener("click", pickNewChalk);
   loadState();
   saveState();
   resizeCanvas();
@@ -240,6 +246,15 @@ function updateChalkCursor() {
   chalkCursor.classList.toggle("is-spent", chalkRemaining <= 0);
 }
 
+function pickNewChalk() {
+  const choices = COLORS.filter((candidate) => candidate !== color);
+  color = choices[Math.floor(Math.random() * choices.length)];
+  chalkRemaining = CHALK_BUDGET;
+  saveState();
+  updateChalkCursor();
+  showNotice("chalkReady");
+}
+
 function tick() {
   const currentDay = getDayKey();
   if (currentDay !== dayKey) resetForNewDay(currentDay);
@@ -266,6 +281,7 @@ function applyLanguage() {
   document.querySelector(".topbar").setAttribute("aria-label", text.status);
   document.querySelector(".language-toggle").setAttribute("aria-label", text.language);
   notice.textContent = text[noticeKey];
+  document.querySelector("#newChalkLabel").textContent = text.newChalk;
   languageButtons.forEach((button) => {
     button.setAttribute("aria-pressed", String(button.dataset.language === language));
   });
