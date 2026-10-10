@@ -71,3 +71,16 @@ test("initial canvas sizing leaves initial board loading to init", () => {
   `, sandbox);
   assert.deepEqual(Array.from(sandbox.events), ["clear-dust"]);
 });
+
+test("unchanged viewport events preserve the bitmap and do not reload history", () => {
+  const {sandbox}=board();
+  vm.runInContext(`var events=[];stopDrawing=()=>events.push("stop");clearFallingDust=()=>events.push("clear");loadBoard=()=>events.push("reload");
+    width=1440;height=900;pixelRatio=2;resizeCanvas()`,sandbox);
+  assert.deepEqual(Array.from(sandbox.events),[]);
+});
+
+test("touch coordinates map a stale CSS box to logical canvas coordinates", () => {
+  const {sandbox}=board();
+  const point=vm.runInContext(`width=300;height=150;boardBounds={left:10,top:20,width:390,height:602};getPoint({clientX:205,clientY:321})`,sandbox);
+  assert.deepEqual(JSON.parse(JSON.stringify(point)),{x:150,y:75});
+});

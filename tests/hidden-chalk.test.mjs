@@ -232,6 +232,29 @@ test("pointer movement is coalesced to one sample per frame", () => {
   assert.deepEqual(Array.from(run("samples")), [99]);
 });
 
+test("canvas layout waits for stylesheet load and the next frame", async () => {
+  const {run,sandbox}=board();
+  const events={},frames=[];
+  sandbox.document.querySelectorAll=()=>[{sheet:null,addEventListener:(type,callback)=>events[type]=callback}];
+  sandbox.requestAnimationFrame=callback=>{frames.push(callback);return 1};
+  const layout=run("waitForBoardLayout()");
+  assert.equal(frames.length,0);
+  events.load();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(frames.length,1);
+  frames.shift()();await layout;
+});
+
+test("resize notifications coalesce instead of resetting the board repeatedly", () => {
+  const {run,sandbox}=board();
+  const frames=[];
+  sandbox.requestAnimationFrame=callback=>{frames.push(callback);return 1};
+  run('var resizes=0;resizeCanvas=()=>resizes++;for(let i=0;i<20;i++)scheduleCanvasResize()');
+  assert.equal(frames.length,1);
+  frames.shift()();
+  assert.equal(run("resizes"),1);
+});
+
 test("stationary held pointer flushes its final segment on the chunk timer", () => {
   const { run, sandbox } = board();
   let timer;

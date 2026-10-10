@@ -125,6 +125,7 @@ let persistence = Promise.resolve();
 let inputFrame = 0;
 let pendingPointer = null;
 let eraserPatch = null;
+let resizeFrame = 0;
 
 init();
 
@@ -143,12 +144,16 @@ async function init() {
   });
   loadState();
   saveState();
+  await waitForBoardLayout();
   resizeCanvas();
   await restoreOutbox();
+  if (typeof ResizeObserver !== "undefined") new ResizeObserver(scheduleCanvasResize).observe(canvas);
   loadBoard();
   updateRoomSelection();
   updateChalkCursor();
-  window.addEventListener("resize", resizeCanvas);
+  window.addEventListener("resize", scheduleCanvasResize);
+  window.visualViewport?.addEventListener("resize", scheduleCanvasResize);
+  window.visualViewport?.addEventListener("scroll", scheduleCanvasResize);
   window.addEventListener("online", () => { flushStrokes(); connectLive(); requestBoardSync(); });
   canvas.addEventListener("pointerdown", startDrawing);
   canvas.addEventListener("pointermove", schedulePointer);
@@ -228,13 +233,33 @@ function scheduleStateSave() {
   if (!stateSaveTimer) stateSaveTimer = setTimeout(saveState, 250);
 }
 
+async function waitForBoardLayout() {
+  // WebKit can execute the module before the stylesheet establishes the canvas box.
+  await Promise.all([...document.querySelectorAll('link[rel="stylesheet"]')].map((link) => {
+    if (link.sheet) return Promise.resolve();
+    return new Promise((resolve) => {
+      link.addEventListener("load", resolve, { once: true });
+      link.addEventListener("error", resolve, { once: true });
+    });
+  }));
+  await new Promise(requestAnimationFrame);
+}
+
+function scheduleCanvasResize() {
+  if (resizeFrame) return;
+  resizeFrame = requestAnimationFrame(() => { resizeFrame = 0; resizeCanvas(); });
+}
+
 function resizeCanvas() {
+  const bounds = canvas.getBoundingClientRect();
+  boardBounds = { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height };
+  const nextRatio = Math.min(window.devicePixelRatio || 1, 2);
+  const nextWidth = Math.floor(bounds.width), nextHeight = Math.floor(bounds.height);
+  if (nextWidth <= 0 || nextHeight <= 0) return;
+  if (nextWidth === width && nextHeight === height && nextRatio === pixelRatio) return;
   const hadBoard = width > 0 && height > 0;
   if (hadBoard) stopDrawing();
-
-  const bounds = canvas.getBoundingClientRect();
-  boardBounds = { left: bounds.left, top: bounds.top };
-  pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+  pixelRatio = nextRatio;
   width = Math.floor(bounds.width);
   height = Math.floor(bounds.height);
   canvas.width = Math.floor(width * pixelRatio);
@@ -664,7 +689,7 @@ async function flushStrokes() {
 
 function startDrawing(event) {
   const bounds = canvas.getBoundingClientRect();
-  boardBounds = { left: bounds.left, top: bounds.top };
+  boardBounds = { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height };
   showChalkCursor(event);
   if (loadingBoard || drawing) return;
   if (chalkRemaining <= 0) {
@@ -902,8 +927,8 @@ function playDiscoverySound() {
 
 function getPoint(event) {
   return {
-    x: event.clientX - boardBounds.left,
-    y: event.clientY - boardBounds.top,
+    x: (event.clientX - boardBounds.left) * (boardBounds.width > 0 ? width / boardBounds.width : 1),
+    y: (event.clientY - boardBounds.top) * (boardBounds.height > 0 ? height / boardBounds.height : 1),
   };
 }
 
